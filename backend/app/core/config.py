@@ -58,6 +58,23 @@ class Settings(BaseSettings):
             return "razorpay" if self.razorpay_key_id else "mock"
         return self.billing_provider  # type: ignore[return-value]
 
+    # Object storage (Cloudflare R2 — S3-compatible)
+    r2_endpoint_url: str | None = None
+    r2_access_key_id: str | None = None
+    r2_secret_access_key: str | None = None
+    r2_bucket: str | None = None
+    r2_public_url: str | None = None  # https://pub-<hash>.r2.dev OR custom CDN domain
+
+    def storage_configured(self) -> bool:
+        return all(
+            [
+                self.r2_endpoint_url,
+                self.r2_access_key_id,
+                self.r2_secret_access_key,
+                self.r2_bucket,
+            ]
+        )
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

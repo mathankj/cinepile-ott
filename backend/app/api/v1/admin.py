@@ -7,10 +7,14 @@ Role gating:
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request, status
+from fastapi import APIRouter, File, Header, HTTPException, Query, Request, UploadFile, status
 from pydantic import BaseModel
 
 from app.api.deps import AdminUser, ContentRoleUser, DbSession
+from app.models.episode import Episode, EpisodeAsset
+from app.models.title import Title, TitleAsset
+from app.services import storage as storage_svc
+from sqlalchemy import delete as sa_delete
 from app.schemas.audit import AuditEntry, AuditListResponse, UserRoleChange
 from app.schemas.title import (
     AudioTrackRead,
@@ -279,6 +283,131 @@ async def create_genre(
 async def list_admin_genres(db: DbSession, _: ContentRoleUser) -> list[GenreRead]:
     items = await svc.list_genres_admin(db)
     return [GenreRead.model_validate(g) for g in items]
+
+
+# ---- Video upload (R2) ------------------------------------------------------
+
+
+# Limit: 1 GB per upload to protect process memory. R2 free tier is 10 GB total
+# so this is plenty for dev. Production deploys may bump this on the LB+nginx side too.
+_MAX_UPLOAD_BYTES = 1024 * 1024 * 1024
+
+
+def _ensure_storage() -> None:
+    if not storage_svc.is_configured():
+        raise HTTPException(
+            503,
+            detail={
+                "error": {
+                    "code": storage_svc.StorageNotConfigured.code,
+                    "message": storage_svc.StorageNotConfigured.message,
+                }
+            },
+        )
+
+
+@router.post("/titles/{title_id}/upload-video")
+async def upload_title_video(
+    title_id: int,
+    request: Request,
+    db: DbSession,
+    actor: ContentRoleUser,
+    file: UploadFile = File(...),
+) -> dict:
+    _ensure_storage()
+    title = await db.get(Title, title_id)
+    if title is None or title.deleted_at is not None:
+        raise HTTPException(
+            404, detail={"error": {"code": "title_not_found", "message": "Title not found."}}
+        )
+    if title.type != "movie":
+        raise HTTPException(
+            409,
+            detail={
+                "error": {
+                    "code": "type_mismatch",
+                    "message": "Use the episode upload endpoint for series.",
+                }
+            },
+        )
+
+    # Stream into R2 (boto3 handles multipart automatically). We use the raw stream
+    # rather than reading the whole thing into memory.
+    key = f"titles/{title_id}/master{_ext_of(file.filename)}"
+    url = storage_svc.upload_fileobj(
+        key=key, file_obj=file.file, content_type=file.content_type or "video/mp4"
+    )
+
+    # Replace any existing hls_manifest pointer
+    await db.execute(
+        sa_delete(TitleAsset).where(
+            TitleAsset.title_id == title.id, TitleAsset.kind == "hls_manifest"
+        )
+    )
+    db.add(TitleAsset(title_id=title.id, kind="hls_manifest", storage_url=url))
+    await db.flush()
+
+    await audit_svc.record(
+        db,
+        actor=actor,
+        action="title.upload_video",
+        entity_type="title",
+        entity_id=title.id,
+        after={"storage_url": url, "key": key},
+        request_id=_req_id(request),
+    )
+    return {"title_id": title.id, "key": key, "url": url}
+
+
+@router.post("/episodes/{episode_id}/upload-video")
+async def upload_episode_video(
+    episode_id: int,
+    request: Request,
+    db: DbSession,
+    actor: ContentRoleUser,
+    file: UploadFile = File(...),
+) -> dict:
+    _ensure_storage()
+    ep = await db.get(Episode, episode_id)
+    if ep is None:
+        raise HTTPException(
+            404, detail={"error": {"code": "episode_not_found", "message": "Episode not found."}}
+        )
+
+    key = f"episodes/{episode_id}/master{_ext_of(file.filename)}"
+    url = storage_svc.upload_fileobj(
+        key=key, file_obj=file.file, content_type=file.content_type or "video/mp4"
+    )
+
+    await db.execute(
+        sa_delete(EpisodeAsset).where(
+            EpisodeAsset.episode_id == ep.id, EpisodeAsset.kind == "hls_manifest"
+        )
+    )
+    db.add(EpisodeAsset(episode_id=ep.id, kind="hls_manifest", storage_url=url))
+    await db.flush()
+
+    await audit_svc.record(
+        db,
+        actor=actor,
+        action="episode.upload_video",
+        entity_type="episode",
+        entity_id=ep.id,
+        after={"storage_url": url, "key": key},
+        request_id=_req_id(request),
+    )
+    return {"episode_id": ep.id, "key": key, "url": url}
+
+
+def _ext_of(filename: str | None) -> str:
+    if not filename:
+        return ".mp4"
+    dot = filename.rfind(".")
+    if dot < 0 or dot >= len(filename) - 1:
+        return ".mp4"
+    ext = filename[dot:].lower()
+    # whitelist; defaults to .mp4 to avoid weird trailing strings
+    return ext if ext in {".mp4", ".m4v", ".mov", ".webm", ".m3u8"} else ".mp4"
 
 
 # ---- Tracks (audio + subtitle) ----------------------------------------------

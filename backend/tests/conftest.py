@@ -24,6 +24,14 @@ os.environ["BILLING_PROVIDER"] = "mock"
 os.environ.pop("RAZORPAY_KEY_ID", None)
 os.environ.pop("RAZORPAY_KEY_SECRET", None)
 
+# Default R2 settings to empty (so storage.is_configured() returns False unless
+# a test explicitly enables it via the r2_mock fixture).
+os.environ.pop("R2_ENDPOINT_URL", None)
+os.environ.pop("R2_ACCESS_KEY_ID", None)
+os.environ.pop("R2_SECRET_ACCESS_KEY", None)
+os.environ.pop("R2_BUCKET", None)
+os.environ.pop("R2_PUBLIC_URL", None)
+
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 from sqlalchemy.ext.asyncio import (  # noqa: E402
@@ -303,6 +311,45 @@ async def admin_client(client, make_user):
     token = resp.json()["tokens"]["access_token"]
     client.headers["Authorization"] = f"Bearer {token}"
     return client, token, user
+
+
+@pytest.fixture
+def r2_mock(monkeypatch):
+    """
+    Enables an in-memory S3 (via moto) for tests that exercise upload endpoints.
+    Sets R2_* env vars to dummy values and creates the bucket.
+    """
+    import boto3
+    from moto import mock_aws
+
+    bucket_name = "anjaneya-test-bucket"
+
+    # moto 5.x intercepts at the URL-pattern level — uses AWS hostnames.
+    # We point R2_ENDPOINT_URL at an AWS-shape URL so moto's interceptor catches it.
+    # Real R2 hostnames (*.r2.cloudflarestorage.com) bypass moto entirely.
+    monkeypatch.setenv("R2_ENDPOINT_URL", "https://s3.us-east-1.amazonaws.com")
+    monkeypatch.setenv("R2_ACCESS_KEY_ID", "test-access-key")
+    monkeypatch.setenv("R2_SECRET_ACCESS_KEY", "test-secret-key")
+    monkeypatch.setenv("R2_BUCKET", bucket_name)
+    monkeypatch.setenv("R2_PUBLIC_URL", "https://pub-test.r2.dev")
+
+    from app.core.config import get_settings
+    from app.services import storage as storage_svc
+
+    get_settings.cache_clear()
+    storage_svc._client.cache_clear()
+
+    with mock_aws():
+        boto3.client(
+            "s3",
+            aws_access_key_id="test-access-key",
+            aws_secret_access_key="test-secret-key",
+            region_name="us-east-1",
+        ).create_bucket(Bucket=bucket_name)
+        yield {"bucket": bucket_name, "public_url": "https://pub-test.r2.dev"}
+
+    get_settings.cache_clear()
+    storage_svc._client.cache_clear()
 
 
 @pytest_asyncio.fixture
