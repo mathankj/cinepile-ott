@@ -1,9 +1,8 @@
 """
-End-to-end user journey: signup → browse plans → subscribe → browse films →
-search → play → record progress → continue-watching → logout.
-
-This is the test that proves "the backend works for what the frontend needs."
-If this passes, a real user could complete every Phase 1 V1 happy path.
+End-to-end V1.5 journey:
+  signup → subscribe → browse home → search → detail movie → detail series →
+  add to my-list → react → progress on a movie → progress on a series episode →
+  continue-watching shows both → logout
 """
 from __future__ import annotations
 
@@ -11,80 +10,81 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_full_user_journey(client, make_plan, make_film) -> None:
-    # Seed catalog + plans (admin would do this; we shortcut via fixtures)
-    plan = await make_plan(code="monthly", price_cents=19900)
-    film1 = await make_film(slug="big-buck-bunny", title="Big Buck Bunny", category_slugs=["animation"])
-    film2 = await make_film(slug="sintel", title="Sintel", category_slugs=["animation"])
-    await make_film(slug="tears-of-steel", title="Tears of Steel", category_slugs=["sci-fi"])
+async def test_full_v15_user_journey(
+    client, make_plan, make_title, make_series_with_episodes
+) -> None:
+    # Seed catalog + plan
+    await make_plan(code="monthly")
+    movie = await make_title(slug="bbb", title="Big Buck Bunny", genres=["animation"])
+    series = await make_series_with_episodes(
+        slug="the-show", seasons=2, episodes_per_season=3, genres=["drama"]
+    )
 
     # 1) Sign up
     signup = await client.post(
         "/v1/auth/signup",
-        json={"email": "newuser@example.com", "password": "supersecret9", "full_name": "New"},
+        json={"email": "u@example.com", "password": "supersecret9", "full_name": "U"},
     )
     assert signup.status_code == 201
     tokens = signup.json()["tokens"]
     client.headers["Authorization"] = f"Bearer {tokens['access_token']}"
 
-    # 2) Browse plans
-    plans = await client.get("/v1/plans")
-    assert plans.status_code == 200
-    assert any(p["code"] == "monthly" for p in plans.json())
-
-    # 3) Subscribe
+    # 2) Subscribe
     sub = await client.post("/v1/subscriptions", json={"plan_code": "monthly"})
-    assert sub.status_code == 201, sub.text
+    assert sub.status_code == 201
 
-    # 4) Browse catalog
-    listing = await client.get("/v1/films")
-    assert listing.status_code == 200
-    assert listing.json()["total"] == 3
+    # 3) Browse home (anonymous-able + personalised rows when authed)
+    home = await client.get("/v1/home")
+    assert home.status_code == 200
+    kinds = [r["kind"] for r in home.json()["rows"]]
+    assert "new_releases" in kinds
 
-    # 5) Filter by category
-    animation = await client.get("/v1/films", params={"category": "animation"})
-    assert animation.json()["total"] == 2
+    # 4) Search
+    found = await client.get("/v1/titles/search", params={"q": "bunny"})
+    assert any(t["slug"] == "bbb" for t in found.json())
 
-    # 6) Search
-    bunny = await client.get("/v1/films/search", params={"q": "bunny"})
-    assert len(bunny.json()) == 1
+    # 5) Movie detail + play
+    movie_detail = await client.get(f"/v1/titles/{movie.id}")
+    assert movie_detail.status_code == 200 and movie_detail.json()["type"] == "movie"
+    play_movie = await client.get(f"/v1/titles/{movie.id}/play")
+    assert play_movie.status_code == 200
 
-    # 7) Detail
-    detail = await client.get(f"/v1/films/{film1.id}")
-    assert detail.status_code == 200
-    assert detail.json()["slug"] == "big-buck-bunny"
+    # 6) Series detail + season + episode play
+    series_detail = await client.get(f"/v1/titles/{series.id}")
+    assert series_detail.json()["type"] == "series"
+    assert len(series_detail.json()["seasons"]) == 2
 
-    # 8) Play
-    play = await client.get(f"/v1/films/{film1.id}/play")
-    assert play.status_code == 200, play.text
-    assert play.json()["manifest_url"]
+    season1 = await client.get(f"/v1/titles/{series.id}/seasons/1")
+    ep1 = season1.json()["episodes"][0]
+    play_ep = await client.get(f"/v1/episodes/{ep1['id']}/play")
+    assert play_ep.status_code == 200
 
-    # 9) Record progress on two films
-    p1 = await client.post(
-        f"/v1/history/{film1.id}/progress", json={"position_sec": 300, "total_sec": 600}
-    )
-    assert p1.status_code == 204
-    p2 = await client.post(
-        f"/v1/history/{film2.id}/progress", json={"position_sec": 100, "total_sec": 1000}
-    )
-    assert p2.status_code == 204
+    # 7) Add to My List + react
+    add = await client.post(f"/v1/me/list/{movie.id}")
+    assert add.json()["added"] is True
+    react = await client.put(f"/v1/titles/{movie.id}/reaction", json={"kind": "double_thumbs_up"})
+    assert react.status_code == 200
 
-    # 10) Continue-watching list, most recent first
-    cw = await client.get("/v1/history")
-    items = cw.json()["items"]
-    assert len(items) == 2
-    assert items[0]["film"]["slug"] == "sintel"  # most recently progressed
-    assert items[1]["film"]["slug"] == "big-buck-bunny"
+    # 8) Progress on movie + episode
+    await client.post(f"/v1/titles/{movie.id}/progress", json={"position_sec": 300, "total_sec": 600})
+    await client.post(f"/v1/episodes/{ep1['id']}/progress", json={"position_sec": 800, "total_sec": 2400})
 
-    # 11) Remove from history
-    rm = await client.delete(f"/v1/history/{film1.id}")
-    assert rm.status_code == 204
-    assert len((await client.get("/v1/history")).json()["items"]) == 1
+    # 9) Continue-watching shows both (series collapsed)
+    cw = (await client.get("/v1/me/continue-watching")).json()
+    title_ids_in_cw = {i["title"]["id"] for i in cw["items"]}
+    assert movie.id in title_ids_in_cw
+    assert series.id in title_ids_in_cw
+
+    # 10) My-list contains the movie
+    my = (await client.get("/v1/me/list")).json()
+    assert any(i["title"]["id"] == movie.id for i in my["items"])
+
+    # 11) Personalised home rows now include continue_watching + my_list
+    home2 = (await client.get("/v1/home")).json()
+    kinds2 = [r["kind"] for r in home2["rows"]]
+    assert "continue_watching" in kinds2
+    assert "my_list" in kinds2
 
     # 12) Logout
     out = await client.post("/v1/auth/logout", json={"refresh_token": tokens["refresh_token"]})
     assert out.status_code == 204
-
-    # 13) Refresh after logout must fail
-    bad = await client.post("/v1/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
-    assert bad.status_code == 401

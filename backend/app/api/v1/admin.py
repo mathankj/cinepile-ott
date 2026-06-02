@@ -1,15 +1,324 @@
-"""Admin routes — film CRUD + user list. Requires role=admin."""
+"""
+Admin routes — titles + seasons + episodes + genres + tracks + users + audit.
+
+Role gating:
+- All catalog writes require `content_manager` or `admin` (ContentRoleUser dep).
+- User management requires `admin` only (AdminUser dep).
+"""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
-from app.api.deps import AdminUser, DbSession
-from app.schemas.film import FilmCreate, FilmDetail, FilmUpdate
+from app.api.deps import AdminUser, ContentRoleUser, DbSession
+from app.schemas.audit import AuditEntry, AuditListResponse, UserRoleChange
+from app.schemas.title import (
+    AudioTrackRead,
+    AudioTracksReplace,
+    EpisodeCreate,
+    EpisodeRead,
+    EpisodeUpdate,
+    GenreCreate,
+    GenreRead,
+    SeasonCreate,
+    SeasonDetail,
+    SeasonUpdate,
+    SubtitleTrackRead,
+    SubtitleTracksReplace,
+    TitleCreate,
+    TitleDetail,
+    TitleSchedule,
+    TitleUpdate,
+)
 from app.schemas.user import UserRead
-from app.services import admin as admin_svc
+from app.services import admin as svc
+from app.services import audit as audit_svc
 
 router = APIRouter()
+
+
+def _err(exc, code: int) -> HTTPException:
+    return HTTPException(
+        status_code=code,
+        detail={"error": {"code": exc.code, "message": exc.message}},
+    )
+
+
+def _req_id(request: Request) -> str | None:
+    return request.headers.get("x-request-id")
+
+
+# ---- Titles ------------------------------------------------------------------
+
+
+@router.post(
+    "/titles",
+    response_model=TitleDetail,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_title(
+    payload: TitleCreate, request: Request, db: DbSession, actor: ContentRoleUser
+) -> TitleDetail:
+    try:
+        t = await svc.create_title(db, actor, payload.model_dump(), request_id=_req_id(request))
+    except svc.SlugInUse as e:
+        raise _err(e, 409) from e
+    from app.api.v1.titles import _title_to_detail
+
+    return _title_to_detail(t)
+
+
+@router.patch("/titles/{title_id}", response_model=TitleDetail)
+async def update_title(
+    title_id: int,
+    payload: TitleUpdate,
+    request: Request,
+    db: DbSession,
+    actor: ContentRoleUser,
+) -> TitleDetail:
+    try:
+        t = await svc.update_title(
+            db, actor, title_id, payload.model_dump(exclude_unset=True), request_id=_req_id(request)
+        )
+    except svc.TitleNotFound as e:
+        raise _err(e, 404) from e
+    from app.api.v1.titles import _title_to_detail
+
+    return _title_to_detail(t)
+
+
+@router.post("/titles/{title_id}/publish", response_model=TitleDetail)
+async def publish_title(
+    title_id: int, request: Request, db: DbSession, actor: ContentRoleUser
+) -> TitleDetail:
+    try:
+        t = await svc.publish_title(db, actor, title_id, request_id=_req_id(request))
+    except svc.TitleNotFound as e:
+        raise _err(e, 404) from e
+    from app.api.v1.titles import _title_to_detail
+
+    return _title_to_detail(t)
+
+
+@router.post("/titles/{title_id}/schedule", response_model=TitleDetail)
+async def schedule_title(
+    title_id: int,
+    payload: TitleSchedule,
+    request: Request,
+    db: DbSession,
+    actor: ContentRoleUser,
+) -> TitleDetail:
+    try:
+        t = await svc.schedule_title(
+            db, actor, title_id, publish_at=payload.publish_at, request_id=_req_id(request)
+        )
+    except svc.TitleNotFound as e:
+        raise _err(e, 404) from e
+    except svc.InvalidLifecycle as e:
+        raise _err(e, 400) from e
+    from app.api.v1.titles import _title_to_detail
+
+    return _title_to_detail(t)
+
+
+@router.post("/titles/{title_id}/archive", response_model=TitleDetail)
+async def archive_title(
+    title_id: int, request: Request, db: DbSession, actor: ContentRoleUser
+) -> TitleDetail:
+    try:
+        t = await svc.archive_title(db, actor, title_id, request_id=_req_id(request))
+    except svc.TitleNotFound as e:
+        raise _err(e, 404) from e
+    from app.api.v1.titles import _title_to_detail
+
+    return _title_to_detail(t)
+
+
+@router.delete("/titles/{title_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_title(
+    title_id: int, request: Request, db: DbSession, actor: ContentRoleUser
+) -> None:
+    try:
+        await svc.soft_delete_title(db, actor, title_id, request_id=_req_id(request))
+    except svc.TitleNotFound as e:
+        raise _err(e, 404) from e
+
+
+# ---- Seasons -----------------------------------------------------------------
+
+
+@router.post(
+    "/titles/{title_id}/seasons",
+    response_model=SeasonDetail,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_season(
+    title_id: int,
+    payload: SeasonCreate,
+    request: Request,
+    db: DbSession,
+    actor: ContentRoleUser,
+) -> SeasonDetail:
+    try:
+        s = await svc.create_season(
+            db, actor, title_id, payload.model_dump(), request_id=_req_id(request)
+        )
+    except svc.TitleNotFound as e:
+        raise _err(e, 404) from e
+    except svc.TypeMismatch as e:
+        raise _err(e, 409) from e
+    return SeasonDetail.model_validate(s)
+
+
+@router.patch("/seasons/{season_id}", response_model=SeasonDetail)
+async def update_season(
+    season_id: int,
+    payload: SeasonUpdate,
+    request: Request,
+    db: DbSession,
+    actor: ContentRoleUser,
+) -> SeasonDetail:
+    try:
+        s = await svc.update_season(
+            db, actor, season_id, payload.model_dump(exclude_unset=True), request_id=_req_id(request)
+        )
+    except svc.SeasonNotFound as e:
+        raise _err(e, 404) from e
+    return SeasonDetail.model_validate(s)
+
+
+@router.delete("/seasons/{season_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_season(
+    season_id: int, request: Request, db: DbSession, actor: ContentRoleUser
+) -> None:
+    try:
+        await svc.delete_season(db, actor, season_id, request_id=_req_id(request))
+    except svc.SeasonNotFound as e:
+        raise _err(e, 404) from e
+
+
+# ---- Episodes ----------------------------------------------------------------
+
+
+@router.post(
+    "/seasons/{season_id}/episodes",
+    response_model=EpisodeRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_episode(
+    season_id: int,
+    payload: EpisodeCreate,
+    request: Request,
+    db: DbSession,
+    actor: ContentRoleUser,
+) -> EpisodeRead:
+    try:
+        ep = await svc.create_episode(
+            db, actor, season_id, payload.model_dump(), request_id=_req_id(request)
+        )
+    except svc.SeasonNotFound as e:
+        raise _err(e, 404) from e
+    except svc.InvalidLifecycle as e:
+        raise _err(e, 400) from e
+    return EpisodeRead.model_validate(ep)
+
+
+@router.patch("/episodes/{episode_id}", response_model=EpisodeRead)
+async def update_episode(
+    episode_id: int,
+    payload: EpisodeUpdate,
+    request: Request,
+    db: DbSession,
+    actor: ContentRoleUser,
+) -> EpisodeRead:
+    try:
+        ep = await svc.update_episode(
+            db, actor, episode_id, payload.model_dump(exclude_unset=True), request_id=_req_id(request)
+        )
+    except svc.EpisodeNotFound as e:
+        raise _err(e, 404) from e
+    return EpisodeRead.model_validate(ep)
+
+
+@router.post("/episodes/{episode_id}/publish", response_model=EpisodeRead)
+async def publish_episode(
+    episode_id: int, request: Request, db: DbSession, actor: ContentRoleUser
+) -> EpisodeRead:
+    try:
+        ep = await svc.publish_episode(db, actor, episode_id, request_id=_req_id(request))
+    except svc.EpisodeNotFound as e:
+        raise _err(e, 404) from e
+    return EpisodeRead.model_validate(ep)
+
+
+@router.delete("/episodes/{episode_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_episode(
+    episode_id: int, request: Request, db: DbSession, actor: ContentRoleUser
+) -> None:
+    try:
+        await svc.delete_episode(db, actor, episode_id, request_id=_req_id(request))
+    except svc.EpisodeNotFound as e:
+        raise _err(e, 404) from e
+
+
+# ---- Genres ------------------------------------------------------------------
+
+
+@router.post("/genres", response_model=GenreRead, status_code=status.HTTP_201_CREATED)
+async def create_genre(
+    payload: GenreCreate, request: Request, db: DbSession, actor: ContentRoleUser
+) -> GenreRead:
+    try:
+        g = await svc.create_genre(db, actor, payload.model_dump(), request_id=_req_id(request))
+    except svc.GenreSlugInUse as e:
+        raise _err(e, 409) from e
+    return GenreRead.model_validate(g)
+
+
+@router.get("/genres", response_model=list[GenreRead])
+async def list_admin_genres(db: DbSession, _: ContentRoleUser) -> list[GenreRead]:
+    items = await svc.list_genres_admin(db)
+    return [GenreRead.model_validate(g) for g in items]
+
+
+# ---- Tracks (audio + subtitle) ----------------------------------------------
+
+
+@router.put("/titles/{title_id}/audio-tracks")
+async def replace_audio_tracks(
+    title_id: int,
+    payload: AudioTracksReplace,
+    request: Request,
+    db: DbSession,
+    actor: ContentRoleUser,
+) -> dict:
+    try:
+        await svc.replace_audio_tracks(
+            db, actor, title_id, [t.model_dump() for t in payload.tracks], request_id=_req_id(request)
+        )
+    except svc.TitleNotFound as e:
+        raise _err(e, 404) from e
+    return {"updated": True, "count": len(payload.tracks)}
+
+
+@router.put("/titles/{title_id}/subtitle-tracks")
+async def replace_subtitle_tracks(
+    title_id: int,
+    payload: SubtitleTracksReplace,
+    request: Request,
+    db: DbSession,
+    actor: ContentRoleUser,
+) -> dict:
+    try:
+        await svc.replace_subtitle_tracks(
+            db, actor, title_id, [t.model_dump() for t in payload.tracks], request_id=_req_id(request)
+        )
+    except svc.TitleNotFound as e:
+        raise _err(e, 404) from e
+    return {"updated": True, "count": len(payload.tracks)}
+
+
+# ---- Users (admin only) ------------------------------------------------------
 
 
 class UserListResponse(BaseModel):
@@ -19,36 +328,6 @@ class UserListResponse(BaseModel):
     total: int
 
 
-@router.post("/films", response_model=FilmDetail, status_code=status.HTTP_201_CREATED)
-async def create_film(payload: FilmCreate, db: DbSession, _: AdminUser) -> FilmDetail:
-    try:
-        film = await admin_svc.create_film(db, payload.model_dump())
-    except admin_svc.SlugInUse as e:
-        raise HTTPException(409, detail={"error": {"code": e.code, "message": e.message}}) from e
-    return FilmDetail.model_validate(film)
-
-
-@router.patch("/films/{film_id}", response_model=FilmDetail)
-async def update_film(
-    film_id: int, payload: FilmUpdate, db: DbSession, _: AdminUser
-) -> FilmDetail:
-    try:
-        film = await admin_svc.update_film(
-            db, film_id, payload.model_dump(exclude_unset=True)
-        )
-    except admin_svc.FilmNotFound as e:
-        raise HTTPException(404, detail={"error": {"code": e.code, "message": e.message}}) from e
-    return FilmDetail.model_validate(film)
-
-
-@router.delete("/films/{film_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_film(film_id: int, db: DbSession, _: AdminUser) -> None:
-    try:
-        await admin_svc.soft_delete_film(db, film_id)
-    except admin_svc.FilmNotFound as e:
-        raise HTTPException(404, detail={"error": {"code": e.code, "message": e.message}}) from e
-
-
 @router.get("/users", response_model=UserListResponse)
 async def list_users(
     db: DbSession,
@@ -56,9 +335,63 @@ async def list_users(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ) -> UserListResponse:
-    items, total = await admin_svc.list_users(db, page=page, page_size=page_size)
+    items, total = await svc.list_users(db, page=page, page_size=page_size)
     return UserListResponse(
         items=[UserRead.model_validate(u) for u in items],
+        page=page,
+        page_size=page_size,
+        total=total,
+    )
+
+
+@router.patch("/users/{user_id}/role", response_model=UserRead)
+async def change_user_role(
+    user_id: int,
+    payload: UserRoleChange,
+    request: Request,
+    db: DbSession,
+    actor: AdminUser,
+) -> UserRead:
+    try:
+        u = await svc.change_user_role(
+            db, actor, user_id, new_role=payload.role, request_id=_req_id(request)
+        )
+    except svc.TitleNotFound as e:
+        # service re-used the exception class; semantics: target user not found
+        raise HTTPException(
+            404, detail={"error": {"code": "user_not_found", "message": "User not found."}}
+        ) from e
+    except svc.InvalidLifecycle as e:
+        raise HTTPException(
+            400,
+            detail={"error": {"code": "invalid_role", "message": "Role must be user, viewer, content_manager, or admin."}},
+        ) from e
+    return UserRead.model_validate(u)
+
+
+# ---- Audit log ---------------------------------------------------------------
+
+
+@router.get("/audit", response_model=AuditListResponse)
+async def list_audit(
+    db: DbSession,
+    _: AdminUser,
+    entity_type: str | None = None,
+    entity_id: int | None = None,
+    actor_user_id: int | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+) -> AuditListResponse:
+    items, total = await audit_svc.list_entries(
+        db,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        actor_user_id=actor_user_id,
+        page=page,
+        page_size=page_size,
+    )
+    return AuditListResponse(
+        items=[AuditEntry.model_validate(i) for i in items],
         page=page,
         page_size=page_size,
         total=total,

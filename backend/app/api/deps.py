@@ -96,6 +96,14 @@ async def require_admin(user: Annotated[User, Depends(get_current_user)]) -> Use
     return user
 
 
+async def require_content_role(user: Annotated[User, Depends(get_current_user)]) -> User:
+    """Allows admin or content_manager. The catalog-write boundary."""
+    if user.role not in {"admin", "content_manager"}:
+        raise _forbidden(message="content_manager or admin role required.")
+    return user
+
+
 CurrentUser = Annotated[User, Depends(get_current_user)]
 CurrentUserOptional = Annotated[User | None, Depends(get_current_user_optional)]
 AdminUser = Annotated[User, Depends(require_admin)]
+ContentRoleUser = Annotated[User, Depends(require_content_role)]

@@ -1,12 +1,18 @@
 """
-Seed the dev DB with realistic sample data so load tests + manual browsing have
-something to hit.
+Seed the dev DB with realistic V1.5 sample data:
+- 5 genres
+- 2 plans
+- 1 admin + 1 content_manager + 1 regular user
+- 3 movies (with playable HLS streams)
+- 1 series with 2 seasons of 3 episodes each (with placeholder HLS per episode)
+- Multi-language audio + subtitle tracks on a couple of titles
+- A few sample reactions and watchlist entries
+
+Idempotent — safe to re-run; checks for existing records by unique key.
 
 Usage:
     cd backend
     .venv/Scripts/python.exe ../scripts/seed_dev_data.py
-
-Idempotent — safe to re-run; uses ON CONFLICT semantics for slugs/codes.
 """
 from __future__ import annotations
 
@@ -15,7 +21,6 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Allow running from project root
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "backend"))
 
@@ -24,56 +29,23 @@ from sqlalchemy import select  # noqa: E402
 from app import models  # noqa: F401, E402
 from app.core.security import hash_password  # noqa: E402
 from app.db.base import Base, get_engine, get_session_factory  # noqa: E402
-from app.models.film import Category, Film, FilmAsset  # noqa: E402
+from app.models.episode import Episode, EpisodeAsset  # noqa: E402
+from app.models.genre import Genre  # noqa: E402
+from app.models.language import AudioTrack, SubtitleTrack  # noqa: E402
+from app.models.reaction import Reaction  # noqa: E402
+from app.models.season import Season  # noqa: E402
 from app.models.subscription import Plan  # noqa: E402
+from app.models.title import Title, TitleAsset  # noqa: E402
 from app.models.user import User  # noqa: E402
+from app.models.watchlist import WatchlistItem  # noqa: E402
 
 
-SAMPLE_FILMS = [
-    {
-        "slug": "big-buck-bunny",
-        "title": "Big Buck Bunny",
-        "synopsis": "A giant rabbit takes revenge on three rodents.",
-        "release_year": 2008,
-        "runtime_minutes": 10,
-        "age_rating": "U",
-        "poster_url": "https://upload.wikimedia.org/wikipedia/commons/c/c5/Big_buck_bunny_poster_big.jpg",
-        "primary_language": "en",
-        "categories": ["animation"],
-        "hls": "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
-    },
-    {
-        "slug": "sintel",
-        "title": "Sintel",
-        "synopsis": "A lone girl searches for her lost dragon companion.",
-        "release_year": 2010,
-        "runtime_minutes": 15,
-        "age_rating": "U/A",
-        "poster_url": "https://upload.wikimedia.org/wikipedia/commons/c/c1/Sintel_poster.jpg",
-        "primary_language": "en",
-        "categories": ["animation", "drama"],
-        "hls": "https://bitdash-a.akamaihd.net/content/sintel/hls/playlist.m3u8",
-    },
-    {
-        "slug": "tears-of-steel",
-        "title": "Tears of Steel",
-        "synopsis": "Robots threaten humanity in this short Blender film.",
-        "release_year": 2012,
-        "runtime_minutes": 12,
-        "age_rating": "U/A",
-        "poster_url": "https://upload.wikimedia.org/wikipedia/commons/7/7a/Tears_of_Steel_frame.jpg",
-        "primary_language": "en",
-        "categories": ["sci-fi"],
-        "hls": "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8",
-    },
-]
-
-CATEGORIES = [
-    ("animation", "Animation"),
-    ("drama", "Drama"),
-    ("sci-fi", "Sci-Fi"),
-    ("action", "Action"),
-    ("documentary", "Documentary"),
+GENRES = [
+    ("animation", "Animation", "primary"),
+    ("drama", "Drama", "primary"),
+    ("sci-fi", "Sci-Fi", "primary"),
+    ("documentary", "Documentary", "primary"),
+    ("comedy", "Comedy", "primary"),
 ]
 
 PLANS = [
@@ -82,16 +54,110 @@ PLANS = [
 ]
 
 
-async def _upsert_category(s, slug: str, name: str) -> Category:
-    cat = await s.scalar(select(Category).where(Category.slug == slug))
-    if cat is None:
-        cat = Category(slug=slug, name=name)
-        s.add(cat)
+MOVIES = [
+    {
+        "slug": "big-buck-bunny",
+        "title": "Big Buck Bunny",
+        "synopsis": "A giant rabbit takes revenge on three rodents.",
+        "release_year": 2008,
+        "runtime_minutes": 10,
+        "age_rating": "U",
+        "original_language": "en",
+        "countries": ["NL"],
+        "poster_url": "https://upload.wikimedia.org/wikipedia/commons/c/c5/Big_buck_bunny_poster_big.jpg",
+        "genres": ["animation"],
+        "hls": "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+        "audio": [{"language": "en", "kind": "original"}, {"language": "ta", "kind": "dub"}],
+        "subs": [
+            {"language": "en", "kind": "cc", "forced": False},
+            {"language": "ta", "kind": "subtitle", "forced": False},
+        ],
+    },
+    {
+        "slug": "sintel",
+        "title": "Sintel",
+        "synopsis": "A lone girl searches for her lost dragon companion.",
+        "release_year": 2010,
+        "runtime_minutes": 15,
+        "age_rating": "U/A",
+        "original_language": "en",
+        "countries": ["NL"],
+        "poster_url": "https://upload.wikimedia.org/wikipedia/commons/c/c1/Sintel_poster.jpg",
+        "genres": ["animation", "drama"],
+        "hls": "https://bitdash-a.akamaihd.net/content/sintel/hls/playlist.m3u8",
+        "audio": [{"language": "en", "kind": "original"}],
+        "subs": [{"language": "en", "kind": "subtitle", "forced": False}],
+    },
+    {
+        "slug": "tears-of-steel",
+        "title": "Tears of Steel",
+        "synopsis": "Robots threaten humanity in this short Blender film.",
+        "release_year": 2012,
+        "runtime_minutes": 12,
+        "age_rating": "U/A",
+        "original_language": "en",
+        "countries": ["NL"],
+        "poster_url": "https://upload.wikimedia.org/wikipedia/commons/7/7a/Tears_of_Steel_frame.jpg",
+        "genres": ["sci-fi"],
+        "hls": "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8",
+        "audio": [{"language": "en", "kind": "original"}],
+        "subs": [],
+    },
+]
+
+SERIES = {
+    "slug": "the-anjaneya-chronicles",
+    "title": "The Anjaneya Chronicles",
+    "synopsis": "A sweeping anthology of stories from across the ages.",
+    "release_year": 2024,
+    "age_rating": "U/A",
+    "original_language": "ta",
+    "countries": ["IN"],
+    "genres": ["drama"],
+    "series_type": "ongoing",
+    "audio": [{"language": "ta", "kind": "original"}, {"language": "en", "kind": "dub"}, {"language": "hi", "kind": "dub"}],
+    "subs": [
+        {"language": "en", "kind": "subtitle", "forced": False},
+        {"language": "ta", "kind": "cc", "forced": False},
+        {"language": "hi", "kind": "subtitle", "forced": False},
+    ],
+    "seasons": [
+        {
+            "season_number": 1,
+            "name": "Season 1 — Beginnings",
+            "episodes": [
+                {"episode_number": 1, "name": "The Awakening", "runtime_seconds": 2400, "intro_start": 0, "intro_end": 60, "credits_start": 2280, "next_cue": 2350},
+                {"episode_number": 2, "name": "The Calling", "runtime_seconds": 2520, "intro_start": 0, "intro_end": 60, "credits_start": 2400, "next_cue": 2470},
+                {"episode_number": 3, "name": "The Trial", "runtime_seconds": 2580, "intro_start": 0, "intro_end": 60, "credits_start": 2460, "next_cue": 2530},
+            ],
+        },
+        {
+            "season_number": 2,
+            "name": "Season 2 — Ascension",
+            "episodes": [
+                {"episode_number": 1, "name": "Return", "runtime_seconds": 2640, "intro_start": 0, "intro_end": 60, "credits_start": 2520, "next_cue": 2590},
+                {"episode_number": 2, "name": "Reckoning", "runtime_seconds": 2700, "intro_start": 0, "intro_end": 60, "credits_start": 2580, "next_cue": 2650},
+                {"episode_number": 3, "name": "Resolution", "runtime_seconds": 2580, "intro_start": 0, "intro_end": 60, "credits_start": 2460, "next_cue": 2530},
+            ],
+        },
+    ],
+}
+
+# Placeholder HLS for every episode — they all use Big Buck Bunny so the
+# player has something real to chew on during dev.
+PLACEHOLDER_EPISODE_HLS = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+
+
+async def _upsert_genre(s, slug, name, kind):
+    g = await s.scalar(select(Genre).where(Genre.slug == slug))
+    if g is None:
+        g = Genre(slug=slug, name=name, kind=kind)
+        s.add(g)
         await s.flush()
-    return cat
+    return g
 
 
-async def _upsert_plan(s, plan_data: dict) -> Plan:
+async def _upsert_plan(s, plan_data):
     plan = await s.scalar(select(Plan).where(Plan.code == plan_data["code"]))
     if plan is None:
         plan = Plan(**plan_data, currency="INR", is_active=True)
@@ -100,70 +166,162 @@ async def _upsert_plan(s, plan_data: dict) -> Plan:
     return plan
 
 
-async def _upsert_film(s, data: dict) -> Film:
-    film = await s.scalar(select(Film).where(Film.slug == data["slug"]))
-    cats = [await _upsert_category(s, cs, cs.title()) for cs in data["categories"]]
-
-    if film is None:
-        film = Film(
+async def _upsert_movie(s, data):
+    t = await s.scalar(select(Title).where(Title.slug == data["slug"]))
+    cats = [await _upsert_genre(s, g, g.title(), "primary") for g in data["genres"]]
+    if t is None:
+        t = Title(
             slug=data["slug"],
+            type="movie",
             title=data["title"],
             synopsis=data["synopsis"],
             release_year=data["release_year"],
             runtime_minutes=data["runtime_minutes"],
             age_rating=data["age_rating"],
+            original_language=data["original_language"],
+            countries=data["countries"],
             poster_url=data["poster_url"],
-            primary_language=data["primary_language"],
             status="published",
             published_at=datetime.now(tz=timezone.utc),
         )
-        film.categories = cats
-        s.add(film)
+        t.genres = cats
+        s.add(t)
         await s.flush()
-        s.add(FilmAsset(film_id=film.id, kind="hls_manifest", storage_url=data["hls"]))
-    return film
+        s.add(TitleAsset(title_id=t.id, kind="hls_manifest", storage_url=data["hls"]))
+        for a in data.get("audio", []):
+            s.add(AudioTrack(title_id=t.id, **a))
+        for sb in data.get("subs", []):
+            s.add(SubtitleTrack(title_id=t.id, **sb))
+    return t
 
 
-async def _ensure_admin(s) -> User:
-    email = "admin@anjaneya.local"
+async def _upsert_series(s, data):
+    t = await s.scalar(select(Title).where(Title.slug == data["slug"]))
+    cats = [await _upsert_genre(s, g, g.title(), "primary") for g in data["genres"]]
+    if t is None:
+        t = Title(
+            slug=data["slug"],
+            type="series",
+            series_type=data["series_type"],
+            title=data["title"],
+            synopsis=data["synopsis"],
+            release_year=data["release_year"],
+            age_rating=data["age_rating"],
+            original_language=data["original_language"],
+            countries=data["countries"],
+            status="published",
+            published_at=datetime.now(tz=timezone.utc),
+        )
+        t.genres = cats
+        s.add(t)
+        await s.flush()
+        for a in data.get("audio", []):
+            s.add(AudioTrack(title_id=t.id, **a))
+        for sb in data.get("subs", []):
+            s.add(SubtitleTrack(title_id=t.id, **sb))
+
+        for season_data in data["seasons"]:
+            season = Season(
+                title_id=t.id,
+                season_number=season_data["season_number"],
+                name=season_data["name"],
+            )
+            s.add(season)
+            await s.flush()
+            for ep_data in season_data["episodes"]:
+                ep = Episode(
+                    season_id=season.id,
+                    episode_number=ep_data["episode_number"],
+                    ordinal=ep_data["episode_number"],
+                    name=ep_data["name"],
+                    runtime_seconds=ep_data["runtime_seconds"],
+                    intro_start_sec=ep_data.get("intro_start"),
+                    intro_end_sec=ep_data.get("intro_end"),
+                    credits_start_sec=ep_data.get("credits_start"),
+                    next_episode_cue_sec=ep_data.get("next_cue"),
+                    status="published",
+                    published_at=datetime.now(tz=timezone.utc),
+                )
+                s.add(ep)
+                await s.flush()
+                s.add(
+                    EpisodeAsset(
+                        episode_id=ep.id,
+                        kind="hls_manifest",
+                        storage_url=PLACEHOLDER_EPISODE_HLS,
+                    )
+                )
+    return t
+
+
+async def _ensure_user(s, email, password, role, full_name):
     user = await s.scalar(select(User).where(User.email == email))
     if user is None:
         user = User(
             email=email,
-            password_hash=hash_password("admin1234"),
-            full_name="Local Admin",
-            role="admin",
+            password_hash=hash_password(password),
+            full_name=full_name,
+            role=role,
         )
         s.add(user)
         await s.flush()
-        print(f"  -> created admin user: {email} / admin1234")
+        print(f"  -> created {role}: {email} / {password}")
     return user
 
 
 async def main() -> None:
-    # Create tables if they don't exist (dev convenience — prod uses Alembic)
+    # Create tables if they don't exist (dev shortcut; prod uses Alembic)
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
     factory = get_session_factory()
     async with factory() as s:
-        print("Seeding categories...")
-        for slug, name in CATEGORIES:
-            await _upsert_category(s, slug, name)
+        print("Seeding genres...")
+        for slug, name, kind in GENRES:
+            await _upsert_genre(s, slug, name, kind)
+
         print("Seeding plans...")
-        for plan_data in PLANS:
-            await _upsert_plan(s, plan_data)
-        print("Seeding films...")
-        for film_data in SAMPLE_FILMS:
-            await _upsert_film(s, film_data)
-        print("Ensuring admin user...")
-        await _ensure_admin(s)
+        for plan in PLANS:
+            await _upsert_plan(s, plan)
+
+        print("Seeding users (admin / content_manager / user)...")
+        admin = await _ensure_user(s, "admin@anjaneya.local", "admin1234", "admin", "Local Admin")
+        cm = await _ensure_user(s, "cm@anjaneya.local", "cm12345", "content_manager", "Content Manager")
+        regular = await _ensure_user(s, "user@anjaneya.local", "user1234", "user", "Regular User")
+
+        print("Seeding movies...")
+        movies = []
+        for m in MOVIES:
+            movies.append(await _upsert_movie(s, m))
+
+        print("Seeding the series...")
+        series = await _upsert_series(s, SERIES)
+
         await s.commit()
 
-    print("\nSeed complete. Try:")
-    print("  curl http://localhost:8000/v1/films")
+        # Reactions + watchlist for the regular user — only add if not already present
+        print("Seeding sample reactions + watchlist...")
+        existing_r = await s.scalar(select(Reaction).where(Reaction.user_id == regular.id))
+        if existing_r is None and movies:
+            s.add(Reaction(user_id=regular.id, title_id=movies[0].id, kind="thumbs_up"))
+            s.add(Reaction(user_id=regular.id, title_id=series.id, kind="double_thumbs_up"))
+        existing_w = await s.scalar(select(WatchlistItem).where(WatchlistItem.user_id == regular.id))
+        if existing_w is None and len(movies) >= 2:
+            s.add(WatchlistItem(user_id=regular.id, title_id=movies[1].id, added_at=datetime.now(tz=timezone.utc)))
+            s.add(WatchlistItem(user_id=regular.id, title_id=series.id, added_at=datetime.now(tz=timezone.utc)))
+        await s.commit()
+
+    print()
+    print("Seed complete. Try:")
+    print("  curl http://localhost:8000/v1/titles")
+    print("  curl http://localhost:8000/v1/home")
     print("  curl http://localhost:8000/v1/plans")
+    print()
+    print("Login as admin:    admin@anjaneya.local / admin1234")
+    print("Login as content:  cm@anjaneya.local    / cm12345")
+    print("Login as user:     user@anjaneya.local  / user1234")
+
     await engine.dispose()
 
 

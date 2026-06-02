@@ -26,9 +26,11 @@ from app.db.base import dispose_engine, get_session_factory
 
 from app.api.v1 import admin as v1_admin
 from app.api.v1 import auth as v1_auth
-from app.api.v1 import films as v1_films
-from app.api.v1 import history as v1_history
+from app.api.v1 import episodes as v1_episodes
+from app.api.v1 import home as v1_home
+from app.api.v1 import me as v1_me
 from app.api.v1 import subscriptions as v1_subscriptions
+from app.api.v1 import titles as v1_titles
 
 log = get_logger(__name__)
 
@@ -107,9 +109,11 @@ def create_app() -> FastAPI:
         return JSONResponse(body, status_code=200 if db_status == "ok" else 503)
 
     app.include_router(v1_auth.router, prefix="/v1/auth", tags=["auth"])
-    app.include_router(v1_films.router, prefix="/v1/films", tags=["films"])
+    app.include_router(v1_titles.router, prefix="/v1/titles", tags=["titles"])
+    app.include_router(v1_episodes.router, prefix="/v1/episodes", tags=["episodes"])
     app.include_router(v1_subscriptions.router, prefix="/v1", tags=["subscriptions"])
-    app.include_router(v1_history.router, prefix="/v1/history", tags=["history"])
+    app.include_router(v1_me.router, prefix="/v1", tags=["me"])
+    app.include_router(v1_home.router, prefix="/v1/home", tags=["home"])
     app.include_router(v1_admin.router, prefix="/v1/admin", tags=["admin"])
 
     return app

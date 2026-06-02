@@ -27,3 +27,6 @@ class User(Base):
 
     def is_admin(self) -> bool:
         return self.role == "admin"
+
+    def can_write_catalog(self) -> bool:
+        return self.role in {"admin", "content_manager"}
