@@ -19,6 +19,7 @@ from app.models.episode import Episode
 from app.models.season import Season
 from app.models.title import Title
 from app.models.user import User
+from app.services import storage as storage_svc
 from app.services.billing import has_active_subscription
 
 
@@ -57,14 +58,17 @@ async def issue_movie_ticket(db: AsyncSession, user: User, title: Title) -> dict
     manifest = next((a for a in title.assets if a.kind == "hls_manifest"), None)
     if manifest is None:
         raise NoPlayableAsset
+    # resolve_url returns the URL as-is if it's already a full http(s):// URL,
+    # else generates a presigned URL from the bucket key (private-bucket case).
+    playback_url = storage_svc.resolve_url(manifest.storage_url)
     expires_at = datetime.now(tz=timezone.utc) + timedelta(minutes=PLAYBACK_TTL_MINUTES)
-    token = _build_token(user.id, "title", title.id, manifest.storage_url, expires_at)
+    token = _build_token(user.id, "title", title.id, playback_url, expires_at)
 
     # Bump view counter for Trending row.
     await db.execute(update(Title).where(Title.id == title.id).values(view_count=Title.view_count + 1))
 
     return {
-        "manifest_url": manifest.storage_url,
+        "manifest_url": playback_url,
         "token": token,
         "expires_at": expires_at,
         "ref_id": title.id,
@@ -77,11 +81,10 @@ async def issue_episode_ticket(db: AsyncSession, user: User, episode: Episode) -
     manifest = next((a for a in episode.assets if a.kind == "hls_manifest"), None)
     if manifest is None:
         raise NoPlayableAsset
+    playback_url = storage_svc.resolve_url(manifest.storage_url)
     expires_at = datetime.now(tz=timezone.utc) + timedelta(minutes=PLAYBACK_TTL_MINUTES)
-    token = _build_token(user.id, "episode", episode.id, manifest.storage_url, expires_at)
+    token = _build_token(user.id, "episode", episode.id, playback_url, expires_at)
 
-    # Bump parent title's view counter (Trending considers a series-episode play
-    # as a play of the series).
     season = await db.get(Season, episode.season_id)
     if season is not None:
         await db.execute(
@@ -89,7 +92,7 @@ async def issue_episode_ticket(db: AsyncSession, user: User, episode: Episode) -
         )
 
     return {
-        "manifest_url": manifest.storage_url,
+        "manifest_url": playback_url,
         "token": token,
         "expires_at": expires_at,
         "ref_id": episode.id,

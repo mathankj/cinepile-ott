@@ -41,12 +41,17 @@ For reference, here's the comparison the research turned up:
 
 ## What to paste me
 
+The env var names are **provider-agnostic** (`STORAGE_*` not `R2_*`) so the same backend works with Cloudflare R2, Backblaze B2, AWS S3, Storj, or any other S3-compatible object store.
+
 ```
-R2_ENDPOINT_URL=https://<account-id>.r2.cloudflarestorage.com
-R2_ACCESS_KEY_ID=...
-R2_SECRET_ACCESS_KEY=...
-R2_BUCKET=anjaneya-dev-media
-R2_PUBLIC_URL=https://pub-<hash>.r2.dev
+STORAGE_ENDPOINT_URL=https://<account-id>.r2.cloudflarestorage.com
+STORAGE_ACCESS_KEY_ID=...
+STORAGE_SECRET_ACCESS_KEY=...
+STORAGE_BUCKET=anjaneya-dev-media
+# Leave STORAGE_PUBLIC_URL empty for private buckets (recommended) — playback
+# generates short-lived presigned URLs each call. Only set this if you've made
+# the bucket public.
+STORAGE_PUBLIC_URL=https://pub-<hash>.r2.dev
 ```
 
 ## What I'll do once I have those

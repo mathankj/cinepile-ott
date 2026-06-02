@@ -331,10 +331,9 @@ async def upload_title_video(
             },
         )
 
-    # Stream into R2 (boto3 handles multipart automatically). We use the raw stream
-    # rather than reading the whole thing into memory.
+    # Stream into storage (boto3 handles multipart automatically).
     key = f"titles/{title_id}/master{_ext_of(file.filename)}"
-    url = storage_svc.upload_fileobj(
+    stored_ref = storage_svc.upload_fileobj(
         key=key, file_obj=file.file, content_type=file.content_type or "video/mp4"
     )
 
@@ -344,7 +343,7 @@ async def upload_title_video(
             TitleAsset.title_id == title.id, TitleAsset.kind == "hls_manifest"
         )
     )
-    db.add(TitleAsset(title_id=title.id, kind="hls_manifest", storage_url=url))
+    db.add(TitleAsset(title_id=title.id, kind="hls_manifest", storage_url=stored_ref))
     await db.flush()
 
     await audit_svc.record(
@@ -353,10 +352,15 @@ async def upload_title_video(
         action="title.upload_video",
         entity_type="title",
         entity_id=title.id,
-        after={"storage_url": url, "key": key},
+        after={"storage_url": stored_ref, "key": key},
         request_id=_req_id(request),
     )
-    return {"title_id": title.id, "key": key, "url": url}
+    return {
+        "title_id": title.id,
+        "key": key,
+        "stored_ref": stored_ref,
+        "playable_url": storage_svc.resolve_url(stored_ref),
+    }
 
 
 @router.post("/episodes/{episode_id}/upload-video")
@@ -375,7 +379,7 @@ async def upload_episode_video(
         )
 
     key = f"episodes/{episode_id}/master{_ext_of(file.filename)}"
-    url = storage_svc.upload_fileobj(
+    stored_ref = storage_svc.upload_fileobj(
         key=key, file_obj=file.file, content_type=file.content_type or "video/mp4"
     )
 
@@ -384,7 +388,7 @@ async def upload_episode_video(
             EpisodeAsset.episode_id == ep.id, EpisodeAsset.kind == "hls_manifest"
         )
     )
-    db.add(EpisodeAsset(episode_id=ep.id, kind="hls_manifest", storage_url=url))
+    db.add(EpisodeAsset(episode_id=ep.id, kind="hls_manifest", storage_url=stored_ref))
     await db.flush()
 
     await audit_svc.record(
@@ -393,10 +397,15 @@ async def upload_episode_video(
         action="episode.upload_video",
         entity_type="episode",
         entity_id=ep.id,
-        after={"storage_url": url, "key": key},
+        after={"storage_url": stored_ref, "key": key},
         request_id=_req_id(request),
     )
-    return {"episode_id": ep.id, "key": key, "url": url}
+    return {
+        "episode_id": ep.id,
+        "key": key,
+        "stored_ref": stored_ref,
+        "playable_url": storage_svc.resolve_url(stored_ref),
+    }
 
 
 def _ext_of(filename: str | None) -> str:

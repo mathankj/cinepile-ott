@@ -58,20 +58,27 @@ class Settings(BaseSettings):
             return "razorpay" if self.razorpay_key_id else "mock"
         return self.billing_provider  # type: ignore[return-value]
 
-    # Object storage (Cloudflare R2 — S3-compatible)
-    r2_endpoint_url: str | None = None
-    r2_access_key_id: str | None = None
-    r2_secret_access_key: str | None = None
-    r2_bucket: str | None = None
-    r2_public_url: str | None = None  # https://pub-<hash>.r2.dev OR custom CDN domain
+    # Object storage — any S3-compatible provider (Backblaze B2, Cloudflare R2,
+    # AWS S3, Storj, etc.). Empty = uploads disabled, GET still works for any
+    # already-stored full URLs.
+    storage_endpoint_url: str | None = None
+    storage_access_key_id: str | None = None
+    storage_secret_access_key: str | None = None
+    storage_bucket: str | None = None
+    # Optional. If set, files are stored as public and storage_url contains the
+    # final public URL. If unset, bucket is treated as private and the playback
+    # service generates short-lived presigned URLs from the stored bucket key.
+    storage_public_url: str | None = None
+    # Default presigned-URL TTL in seconds (4h covers a full feature film comfortably)
+    storage_presigned_ttl_seconds: int = 14400
 
     def storage_configured(self) -> bool:
         return all(
             [
-                self.r2_endpoint_url,
-                self.r2_access_key_id,
-                self.r2_secret_access_key,
-                self.r2_bucket,
+                self.storage_endpoint_url,
+                self.storage_access_key_id,
+                self.storage_secret_access_key,
+                self.storage_bucket,
             ]
         )
 

@@ -286,9 +286,9 @@ async def main() -> None:
             await _upsert_plan(s, plan)
 
         print("Seeding users (admin / content_manager / user)...")
-        admin = await _ensure_user(s, "admin@anjaneya.local", "admin1234", "admin", "Local Admin")
-        cm = await _ensure_user(s, "cm@anjaneya.local", "cm12345", "content_manager", "Content Manager")
-        regular = await _ensure_user(s, "user@anjaneya.local", "user1234", "user", "Regular User")
+        admin = await _ensure_user(s, "admin@anjaneya.app", "admin1234", "admin", "Local Admin")
+        cm = await _ensure_user(s, "cm@anjaneya.app", "cm12345", "content_manager", "Content Manager")
+        regular = await _ensure_user(s, "user@anjaneya.app", "user1234", "user", "Regular User")
 
         print("Seeding movies...")
         movies = []
@@ -318,9 +318,9 @@ async def main() -> None:
     print("  curl http://localhost:8000/v1/home")
     print("  curl http://localhost:8000/v1/plans")
     print()
-    print("Login as admin:    admin@anjaneya.local / admin1234")
-    print("Login as content:  cm@anjaneya.local    / cm12345")
-    print("Login as user:     user@anjaneya.local  / user1234")
+    print("Login as admin:    admin@anjaneya.app / admin1234")
+    print("Login as content:  cm@anjaneya.app    / cm12345")
+    print("Login as user:     user@anjaneya.app  / user1234")
 
     await engine.dispose()
 
