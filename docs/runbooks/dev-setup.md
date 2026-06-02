@@ -62,9 +62,26 @@ pytest --cov=app --cov-report=html  # coverage report → htmlcov/index.html
 ## Switch to real Postgres (Neon)
 
 1. Get the connection string from your Neon dashboard.
-2. Convert the prefix from `postgresql://` to `postgresql+asyncpg://`.
-3. Put it in `backend/.env` as `DATABASE_URL=postgresql+asyncpg://...`.
-4. Restart the dev server. `/healthz` should still show `"db": "ok"`.
+2. **Three substitutions required** — Neon's default string is shaped for psycopg2; we use asyncpg:
+   - `postgresql://` → `postgresql+asyncpg://`
+   - `sslmode=require` → `ssl=require` (asyncpg doesn't understand `sslmode`)
+   - Use the `-pooler` host (Neon's built-in PgBouncer) for better connection reuse
+3. Final shape:
+   ```
+   DATABASE_URL=postgresql+asyncpg://USER:PASS@HOST-pooler.REGION.aws.neon.tech/DB?ssl=require
+   ```
+4. Apply the migration:
+   ```bash
+   cd backend
+   .venv/Scripts/python.exe -m alembic upgrade head
+   ```
+5. Seed:
+   ```bash
+   .venv/Scripts/python.exe ../scripts/seed_dev_data.py
+   ```
+6. Restart the dev server. `/healthz` should show `"db": "ok"`.
+
+**Test suite is unaffected** — pytest forces `DATABASE_URL=sqlite+aiosqlite:///:memory:` via conftest, so the 65 tests keep running against isolated in-memory SQLite regardless of what's in `.env`.
 
 ## Lint and type-check
 
