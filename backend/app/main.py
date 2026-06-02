@@ -24,8 +24,11 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.db.base import dispose_engine, get_session_factory
 
-# Routers will be included here as they are built in Phase 1
-# from app.api.v1 import auth, films, subscriptions, history, admin
+from app.api.v1 import admin as v1_admin
+from app.api.v1 import auth as v1_auth
+from app.api.v1 import films as v1_films
+from app.api.v1 import history as v1_history
+from app.api.v1 import subscriptions as v1_subscriptions
 
 log = get_logger(__name__)
 
@@ -103,12 +106,11 @@ def create_app() -> FastAPI:
         }
         return JSONResponse(body, status_code=200 if db_status == "ok" else 503)
 
-    # Include API v1 routers (added as built):
-    # app.include_router(auth.router, prefix="/v1/auth", tags=["auth"])
-    # app.include_router(films.router, prefix="/v1/films", tags=["films"])
-    # app.include_router(subscriptions.router, prefix="/v1/subscriptions", tags=["subscriptions"])
-    # app.include_router(history.router, prefix="/v1/history", tags=["history"])
-    # app.include_router(admin.router, prefix="/v1/admin", tags=["admin"])
+    app.include_router(v1_auth.router, prefix="/v1/auth", tags=["auth"])
+    app.include_router(v1_films.router, prefix="/v1/films", tags=["films"])
+    app.include_router(v1_subscriptions.router, prefix="/v1", tags=["subscriptions"])
+    app.include_router(v1_history.router, prefix="/v1/history", tags=["history"])
+    app.include_router(v1_admin.router, prefix="/v1/admin", tags=["admin"])
 
     return app
 

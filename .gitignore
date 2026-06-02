@@ -48,6 +48,9 @@ Thumbs.db
 logs/
 *.log
 
+# Test/load run artifacts
+backend/reports/
+
 # Local uploads / media (never commit binaries)
 backend/uploads/
 backend/media/
