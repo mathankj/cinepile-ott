@@ -26,6 +26,9 @@ class SubscriptionRead(BaseModel):
     current_period_end: datetime
     cancel_at_period_end: bool
     provider: str
+    # Only set for Razorpay sub created in `pending`: the URL the user must
+    # visit to complete checkout. Null once status=active.
+    checkout_url: str | None = None
 
 
 class SubscriptionCreate(BaseModel):

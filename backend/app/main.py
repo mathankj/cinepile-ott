@@ -31,6 +31,7 @@ from app.api.v1 import home as v1_home
 from app.api.v1 import me as v1_me
 from app.api.v1 import subscriptions as v1_subscriptions
 from app.api.v1 import titles as v1_titles
+from app.api.v1 import webhooks as v1_webhooks
 
 log = get_logger(__name__)
 
@@ -115,6 +116,7 @@ def create_app() -> FastAPI:
     app.include_router(v1_me.router, prefix="/v1", tags=["me"])
     app.include_router(v1_home.router, prefix="/v1/home", tags=["home"])
     app.include_router(v1_admin.router, prefix="/v1/admin", tags=["admin"])
+    app.include_router(v1_webhooks.router, prefix="/v1/webhooks", tags=["webhooks"])
 
     return app
 

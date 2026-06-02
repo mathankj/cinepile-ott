@@ -18,6 +18,9 @@ class Plan(Base):
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="INR")
     billing_interval: Mapped[str] = mapped_column(String(16), nullable=False)  # 'month' | 'year'
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Cached Razorpay Plan id (created on first subscribe via that provider).
+    # NULL means no Razorpay plan yet — will be lazily created.
+    provider_plan_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class Subscription(Base):
@@ -33,3 +36,5 @@ class Subscription(Base):
     cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     provider: Mapped[str] = mapped_column(String(16), nullable=False, default="mock")
     provider_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # For Razorpay: short_url to redirect the user to checkout. Cleared once status=active.
+    checkout_url: Mapped[str | None] = mapped_column(String(255), nullable=True)

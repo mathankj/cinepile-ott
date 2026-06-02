@@ -45,6 +45,19 @@ class Settings(BaseSettings):
     storage_bucket: str | None = None
     storage_region: str | None = None
 
+    # Razorpay
+    razorpay_key_id: str | None = None
+    razorpay_key_secret: str | None = None
+    razorpay_webhook_secret: str | None = None
+    # 'auto' picks razorpay if key_id is set, otherwise mock
+    billing_provider: Literal["auto", "mock", "razorpay"] = "auto"
+
+    @property
+    def effective_billing_provider(self) -> Literal["mock", "razorpay"]:
+        if self.billing_provider == "auto":
+            return "razorpay" if self.razorpay_key_id else "mock"
+        return self.billing_provider  # type: ignore[return-value]
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

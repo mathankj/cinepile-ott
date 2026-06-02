@@ -19,6 +19,7 @@ dependencies = [
     "email-validator>=2.2",
     "httpx>=0.27",            # outbound HTTP + test client
     "structlog>=24.4",        # structured logging
+    "razorpay>=1.4",          # billing (test + live)
 ]
 
 [build-system]

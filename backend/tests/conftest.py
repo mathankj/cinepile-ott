@@ -19,6 +19,10 @@ import pytest_asyncio
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("JWT_SECRET", "test-secret-test-secret-test-secret-32")
 os.environ.setdefault("APP_ENV", "dev")
+# Force mock billing in tests — never hit Razorpay's API even if .env has live keys
+os.environ["BILLING_PROVIDER"] = "mock"
+os.environ.pop("RAZORPAY_KEY_ID", None)
+os.environ.pop("RAZORPAY_KEY_SECRET", None)
 
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from sqlalchemy import select  # noqa: E402

@@ -37,6 +37,8 @@ async def subscribe(
         raise HTTPException(404, detail={"error": {"code": e.code, "message": e.message}}) from e
     except billing.AlreadySubscribed as e:
         raise HTTPException(409, detail={"error": {"code": e.code, "message": e.message}}) from e
+    except billing.ProviderError as e:
+        raise HTTPException(502, detail={"error": {"code": e.code, "message": e.message}}) from e
     return SubscriptionRead.model_validate(sub)
 
 
