@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+/*
+ * Anjaneya OTT — design tokens (Netflix-grade)
+ * All numerics traced to documented Netflix conventions; estimates labeled.
+ */
+@theme {
+  /* Breakpoints */
+  --breakpoint-xs: 480px;
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+  --breakpoint-2xl: 1536px;
+  --breakpoint-3xl: 1920px;
+
+  /* Brand red — Netflix's exact #E50914 */
+  --color-brand: #E50914;
+  --color-brand-hover: #F40612;
+  --color-brand-dark: #B20710;
+
+  /* Surfaces — #141414, not pure #000 */
+  --color-bg: #141414;
+  --color-bg-elevated: #181818;
+  --color-bg-deep: #000000;
+  --color-bg-surface: #232323;
+  --color-border-default: #2F2F2F;
+
+  /* Text */
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: #E5E5E5;
+  --color-text-muted: #B3B3B3;
+  --color-text-disabled: #808080;
+
+  /* Type */
+  --font-sans: "Netflix Sans", "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+
+  /* Motion */
+  --ease-netflix: cubic-bezier(0.5, 0, 0.1, 1);
+}
+
+/* Reset + base */
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+img, svg, video { display: block; max-width: 100%; }
+button, input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
+
+/* Hide scrollbars on horizontal rows (Netflix doesn't show one) */
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Hero overlay gradient */
+.hero-fade {
+  background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(20,20,20,0.6) 60%, #141414 100%);
+}
+/* Top-nav fade (transparent over hero) */
+.navbar-fade {
+  background: linear-gradient(180deg, rgba(0,0,0,0.7) 10%, transparent 100%);
+}
+
+/* Keyframes */
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+@keyframes scaleIn { from { opacity: 0; transform: scale(0.95) } to { opacity: 1; transform: scale(1) } }
+@keyframes slideUp { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
+.animate-fade-in { animation: fadeIn 400ms ease-out forwards; }
+.animate-scale-in { animation: scaleIn 300ms var(--ease-netflix) forwards; }
+.animate-slide-up { animation: slideUp 250ms var(--ease-netflix) forwards; }
