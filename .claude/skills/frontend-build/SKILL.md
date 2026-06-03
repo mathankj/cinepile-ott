@@ -125,12 +125,31 @@ See `docs/research/2026-06-03-netflix-design-system.md` (if added) or the in-lin
 ## Adding a new page — checklist
 
 1. Create `src/pages/MyPage.tsx`
-2. Add route in `src/routes/index.tsx`
+2. Add route in `src/routes/index.tsx` — wrap with `React.lazy(() => import("..."))` and the `lazyRoute()` helper so the page ships as its own chunk
 3. Add nav link in `src/components/layout/Navbar.tsx` (if user-facing) or `AdminLayout.tsx`
 4. Use the design tokens — `bg`, `text`, `brand`, etc.
 5. Mobile-test at 375px before committing
-6. Run `npm run build` — type errors must pass
+6. Run `npm run build` — type errors must pass, and check the chunk listing to confirm the new page ships as its own chunk (1–10 KB gzipped typically)
 7. Commit
+
+## Performance conventions (already wired — keep using them)
+
+- **Routes are `React.lazy()` code-split** in `routes/index.tsx`. Initial bundle ≈ 141 KB gzipped; heavy stuff (HLS player on Watch, 158 KB) ships in its own lazy chunk. Never top-level-import a page in routes — always lazy.
+- **`<Suspense fallback={<PageLoader />}>`** is built into the `lazyRoute()` helper.
+- **Image `loading="lazy"`** + `decoding="async"` on every card. Off-screen rows don't block paint.
+- **TanStack Query** caches reads with 30 s stale-time, doesn't refetch on focus.
+- **Prefetch on hover**: `TitleCard` calls `queryClient.prefetchQuery(["title", id], ...)` on `mouseenter` / `focus`. Detail page renders instantly post-click. Apply the same pattern when you add new "card → detail" navigations.
+- **Backend `selectinload`** prevents N+1 — relationships eager-load in one follow-up query. We use `lazy="selectin"` on every collection.
+
+## When you want to make a page faster
+
+In order of impact:
+
+1. **Confirm it's already lazy.** Check `routes/index.tsx`. If not, that's the biggest win.
+2. **Prefetch the next route on hover** with `queryClient.prefetchQuery`. Shaves ~300 ms off perceived nav.
+3. **Per-icon `lucide-react` imports** (already followed — never `import * from lucide-react`).
+4. **Sub-second LCP**: prefer `backdrop_url` (16:9 landscape) over `poster_url` (2:3 portrait, looks cropped weird in our landscape cards).
+5. **Skeleton on slow pages** — Home has one; add the equivalent on Browse/Title if Neon cold-start hurts.
 
 ## Running the dev environment
 

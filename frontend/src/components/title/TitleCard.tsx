@@ -1,17 +1,24 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
+import { useQueryClient } from "@tanstack/react-query";
+import { catalog } from "../../api";
 import type { TitleSummary } from "../../api/types";
 
 /**
  * Single-title card — landscape 16:9.
  *
- * Hover: scale 1.08 with sibling translate (handled by parent gap).
- * Easing: Netflix's cubic-bezier(0.5, 0, 0.1, 1) over 300ms.
+ * Lazy/perf optimisations baked in:
+ * - `loading="lazy"` on the img so off-screen rows don't block paint.
+ * - Hover prefetches `catalog.detail(title.id)` into the TanStack Query cache
+ *   so the TitleDetail page renders instantly on click (vs. waiting for a
+ *   network round-trip after navigation).
+ * - Image error fallback: deterministic gradient + title text so the row
+ *   still feels alive when art is missing.
  *
- * Image fallback: when the backdrop/poster fails to load (or doesn't exist),
- * we render the title text on a deterministic gradient so the user can still
- * tell what they're looking at.
+ * Visual conventions from the Netflix research:
+ *  scale 1.08, 300ms, cubic-bezier(0.5, 0, 0.1, 1)
+ *  rounded-[4px], no drop shadow, no overflow blur
  */
 export function TitleCard({
   title,
@@ -20,13 +27,26 @@ export function TitleCard({
   title: TitleSummary;
   progressPercent?: number;
 }) {
+  const qc = useQueryClient();
   const imgUrl = title.backdrop_url || title.poster_url;
   const [imgFailed, setImgFailed] = useState(false);
   const showImage = imgUrl && !imgFailed;
 
+  // Prefetch detail on hover — runs at most once per card per session because
+  // TanStack Query dedupes via the queryKey.
+  function prefetch() {
+    qc.prefetchQuery({
+      queryKey: ["title", title.id],
+      queryFn: () => catalog.detail(title.id),
+      staleTime: 60_000,
+    });
+  }
+
   return (
     <Link
       to={`/title/${title.id}`}
+      onMouseEnter={prefetch}
+      onFocus={prefetch}
       className="group relative block flex-none overflow-hidden rounded-[4px]"
     >
       <motion.div
@@ -39,6 +59,7 @@ export function TitleCard({
             src={imgUrl}
             alt={title.title}
             loading="lazy"
+            decoding="async"
             className="h-full w-full object-cover"
             onError={() => setImgFailed(true)}
           />
@@ -60,14 +81,12 @@ export function TitleCard({
           </div>
         </div>
 
-        {/* FREE badge */}
         {title.is_free && (
           <div className="absolute left-2 top-2 rounded bg-[var(--color-brand)] px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-white shadow-lg">
             FREE
           </div>
         )}
 
-        {/* Continue Watching progress bar */}
         {typeof progressPercent === "number" && progressPercent > 0 && (
           <div className="absolute inset-x-0 bottom-0 h-1 bg-white/20">
             <div
@@ -82,7 +101,6 @@ export function TitleCard({
 }
 
 function FallbackTile({ title }: { title: string }) {
-  // Hash title → hue → consistent gradient across reloads
   let hash = 0;
   for (let i = 0; i < title.length; i++) hash = (hash * 31 + title.charCodeAt(i)) | 0;
   const hue = Math.abs(hash) % 360;
