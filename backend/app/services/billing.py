@@ -91,9 +91,12 @@ async def subscribe(db: AsyncSession, user: User, *, plan_code: str) -> Subscrip
     if existing is not None:
         raise AlreadySubscribed
 
-    provider = get_settings().effective_billing_provider
+    settings = get_settings()
+    provider = settings.effective_billing_provider
     if provider == "razorpay":
-        return await _subscribe_razorpay(db, user, plan)
+        if settings.billing_mode == "subscriptions":
+            return await _subscribe_razorpay_subscriptions(db, user, plan)
+        return await _subscribe_razorpay_orders(db, user, plan)
     return await _subscribe_mock(db, user, plan)
 
 
@@ -138,7 +141,73 @@ async def _subscribe_mock(db: AsyncSession, user: User, plan: Plan) -> Subscript
     return sub
 
 
-# ---- Razorpay provider --------------------------------------------------------
+# ---- Razorpay provider — Orders API (default; no KYC needed) -----------------
+
+
+async def _subscribe_razorpay_orders(db: AsyncSession, user: User, plan: Plan) -> Subscription:
+    """
+    One-time payment per period via Razorpay Orders.
+    The local Subscription stays `pending` until the payment.captured webhook
+    fires (or until the client returns to the frontend with razorpay_payment_id +
+    razorpay_signature which we can also verify on the spot).
+    """
+    from app.services import razorpay_client
+
+    now = _now()
+    period_end = _period_end(now, plan.billing_interval)
+
+    # Create local row FIRST so we have an id to put in receipt + notes
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=plan.id,
+        status="pending",
+        current_period_start=now,
+        current_period_end=period_end,
+        provider="razorpay",
+        provider_subscription_id=None,
+    )
+    db.add(sub)
+    await db.flush()  # populates sub.id
+
+    try:
+        order = await razorpay_client.create_order(
+            amount_paise=plan.price_cents,
+            currency=plan.currency,
+            receipt=f"sub_{sub.id}_{int(now.timestamp())}",
+            notes={
+                "user_id": str(user.id),
+                "user_email": user.email,
+                "local_subscription_id": str(sub.id),
+                "plan_code": plan.code,
+            },
+        )
+    except razorpay_client.RazorpayNotConfigured as e:
+        raise ProviderError from e
+    except Exception as e:  # noqa: BLE001
+        log.error("razorpay_order_create_failed", error=str(e))
+        raise ProviderError from e
+
+    sub.provider_subscription_id = order["id"]  # we reuse this column for order_id
+    # Build a Razorpay Checkout URL. In dev, the /test-checkout helper page reads
+    # these params and opens Razorpay's JS widget for testing. The React frontend
+    # will use the same params via its own Razorpay Checkout integration.
+    from urllib.parse import urlencode
+
+    settings = get_settings()
+    params = {
+        "order_id": order["id"],
+        "key_id": settings.razorpay_key_id or "",
+        "amount": plan.price_cents,
+        "currency": plan.currency,
+        "name": "Anjaneya OTT",
+        "description": plan.name,
+    }
+    sub.checkout_url = f"/test-checkout?{urlencode(params)}"
+    await db.flush()
+    return sub
+
+
+# ---- Razorpay provider — Subscriptions API (recurring; needs KYC) ------------
 
 
 async def _ensure_razorpay_plan(plan: Plan) -> str:
@@ -159,7 +228,7 @@ async def _ensure_razorpay_plan(plan: Plan) -> str:
     return rp["id"]
 
 
-async def _subscribe_razorpay(db: AsyncSession, user: User, plan: Plan) -> Subscription:
+async def _subscribe_razorpay_subscriptions(db: AsyncSession, user: User, plan: Plan) -> Subscription:
     from app.services import razorpay_client
 
     try:
@@ -205,52 +274,88 @@ async def apply_razorpay_event(db: AsyncSession, event: dict) -> str:
     """
     Idempotent — Razorpay can retry. Returns a short status string for logging.
 
-    Events we act on:
-      subscription.activated      → flip to active
-      subscription.authenticated  → flip to active (older event name)
-      subscription.charged        → bump current_period_end forward
-      subscription.cancelled      → status=cancelled
-      subscription.completed      → status=expired (all cycles done)
-      subscription.halted/paused  → status=past_due
+    Subscriptions-API events:
+      subscription.activated / authenticated / charged  → active
+      subscription.cancelled                            → cancelled
+      subscription.completed                            → expired
+      subscription.halted / paused / pending            → past_due
+
+    Orders-API events (the default mode):
+      payment.captured       → flip the matching pending subscription to active
+      order.paid             → same; either event arrives first depending on configuration
+      payment.failed         → log; subscription stays pending so user can retry
     """
-    name = event.get("event")
+    name = event.get("event") or ""
     payload = event.get("payload", {})
-    sub_data = payload.get("subscription", {}).get("entity") or payload.get("subscription", {})
-    if not isinstance(sub_data, dict):
-        return "no_subscription_in_payload"
-    rp_sub_id = sub_data.get("id")
-    if not rp_sub_id:
-        return "no_subscription_id"
 
-    sub = await db.scalar(
-        select(Subscription).where(Subscription.provider_subscription_id == rp_sub_id)
-    )
-    if sub is None:
-        return f"unknown_subscription_{rp_sub_id}"
+    # ---- Subscriptions-API events ----
+    if name.startswith("subscription."):
+        sub_data = payload.get("subscription", {}).get("entity") or payload.get("subscription", {})
+        if not isinstance(sub_data, dict):
+            return "no_subscription_in_payload"
+        rp_sub_id = sub_data.get("id")
+        if not rp_sub_id:
+            return "no_subscription_id"
 
-    status_map = {
-        "subscription.activated": "active",
-        "subscription.authenticated": "active",
-        "subscription.charged": "active",
-        "subscription.completed": "expired",
-        "subscription.cancelled": "cancelled",
-        "subscription.halted": "past_due",
-        "subscription.paused": "past_due",
-        "subscription.pending": "past_due",
-    }
-    new_status = status_map.get(name or "")
-    if new_status is None:
-        return f"unhandled_event_{name}"
+        sub = await db.scalar(
+            select(Subscription).where(Subscription.provider_subscription_id == rp_sub_id)
+        )
+        if sub is None:
+            return f"unknown_subscription_{rp_sub_id}"
 
-    sub.status = new_status
-    if new_status == "active":
-        sub.checkout_url = None  # checkout completed
-        # Razorpay's payload includes current_end (epoch seconds) on charged events
-        current_end = sub_data.get("current_end")
-        if current_end:
-            sub.current_period_end = datetime.fromtimestamp(int(current_end), tz=timezone.utc)
-    elif new_status in {"cancelled", "expired"}:
-        sub.cancel_at_period_end = False
+        status_map = {
+            "subscription.activated": "active",
+            "subscription.authenticated": "active",
+            "subscription.charged": "active",
+            "subscription.completed": "expired",
+            "subscription.cancelled": "cancelled",
+            "subscription.halted": "past_due",
+            "subscription.paused": "past_due",
+            "subscription.pending": "past_due",
+        }
+        new_status = status_map.get(name)
+        if new_status is None:
+            return f"unhandled_event_{name}"
+        sub.status = new_status
+        if new_status == "active":
+            sub.checkout_url = None
+            current_end = sub_data.get("current_end")
+            if current_end:
+                sub.current_period_end = datetime.fromtimestamp(int(current_end), tz=timezone.utc)
+        elif new_status in {"cancelled", "expired"}:
+            sub.cancel_at_period_end = False
+        await db.flush()
+        return f"applied_{name}"
 
-    await db.flush()
-    return f"applied_{name}"
+    # ---- Orders-API events ----
+    if name in {"payment.captured", "order.paid", "payment.failed"}:
+        # Both events carry the Order id either directly (order.paid) or on the
+        # nested payment entity (payment.captured.payload.payment.entity.order_id).
+        payment = payload.get("payment", {}).get("entity") or {}
+        order = payload.get("order", {}).get("entity") or {}
+        order_id = order.get("id") or payment.get("order_id")
+        if not order_id:
+            return "no_order_id_in_payload"
+
+        sub = await db.scalar(
+            select(Subscription).where(Subscription.provider_subscription_id == order_id)
+        )
+        if sub is None:
+            # Webhook may have arrived before the subscribe call committed; the
+            # frontend can also verify-and-finalise on its own (POST /v1/payments/verify).
+            return f"unknown_order_{order_id}"
+
+        if name == "payment.failed":
+            # Don't change the subscription state — leave as pending so the user
+            # can retry. We could surface a flag in a future iteration.
+            return "applied_payment.failed_pending_retry"
+
+        # payment.captured / order.paid → flip to active for this period
+        if sub.status != "active":
+            sub.status = "active"
+            sub.checkout_url = None
+            # Period was already set on create. Don't shift it.
+        await db.flush()
+        return f"applied_{name}"
+
+    return f"unhandled_event_{name}"

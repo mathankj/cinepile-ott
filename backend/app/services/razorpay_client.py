@@ -91,6 +91,58 @@ async def cancel_subscription(subscription_id: str, *, cancel_at_cycle_end: bool
     )
 
 
+# ---- Orders (one-time payment per period) ----------------------------------
+
+
+async def create_order(
+    *, amount_paise: int, currency: str = "INR", receipt: str, notes: dict | None = None
+) -> dict[str, Any]:
+    """
+    Create a Razorpay Order — works WITHOUT business activation (the path we use
+    until the client's company completes KYC for live recurring).
+
+    receipt: a short string of our own that ties this order back to a local row.
+             Razorpay enforces uniqueness only within a 30-day window.
+    notes:   key-value bag echoed back on the webhook. Put user_id, local subscription
+             id here so the webhook handler can find the right row.
+    """
+    client = _client()
+    payload: dict[str, Any] = {
+        "amount": amount_paise,
+        "currency": currency,
+        "receipt": receipt[:40],  # Razorpay caps receipt at 40 chars
+        "payment_capture": 1,     # auto-capture on payment success
+    }
+    if notes:
+        payload["notes"] = notes
+    return await asyncio.to_thread(client.order.create, payload)
+
+
+async def fetch_order(order_id: str) -> dict[str, Any]:
+    return await asyncio.to_thread(_client().order.fetch, order_id)
+
+
+async def fetch_payment(payment_id: str) -> dict[str, Any]:
+    return await asyncio.to_thread(_client().payment.fetch, payment_id)
+
+
+def verify_payment_signature(
+    *, order_id: str, payment_id: str, signature: str, secret: str | None = None
+) -> bool:
+    """
+    Verify the signature Razorpay Checkout returns to the frontend on success.
+    HMAC-SHA256 of `f"{order_id}|{payment_id}"` with our key_secret.
+
+    This is separate from the webhook signature (which uses webhook_secret).
+    """
+    s = secret or get_settings().razorpay_key_secret
+    if not s:
+        return False
+    msg = f"{order_id}|{payment_id}".encode("utf-8")
+    expected = hmac.new(s.encode("utf-8"), msg, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
 # ---- Webhook signature verification ----------------------------------------
 
 

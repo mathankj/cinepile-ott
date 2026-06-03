@@ -21,6 +21,7 @@ os.environ.setdefault("JWT_SECRET", "test-secret-test-secret-test-secret-32")
 os.environ.setdefault("APP_ENV", "dev")
 # Force mock billing in tests — never hit Razorpay's API even if .env has live keys
 os.environ["BILLING_PROVIDER"] = "mock"
+os.environ["BILLING_MODE"] = "orders"  # default; razorpay tests opt into other modes
 os.environ.pop("RAZORPAY_KEY_ID", None)
 os.environ.pop("RAZORPAY_KEY_SECRET", None)
 

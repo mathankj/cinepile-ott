@@ -51,6 +51,13 @@ class Settings(BaseSettings):
     razorpay_webhook_secret: str | None = None
     # 'auto' picks razorpay if key_id is set, otherwise mock
     billing_provider: Literal["auto", "mock", "razorpay"] = "auto"
+    # Within the Razorpay provider, choose the integration shape:
+    #   orders        — one-time payment per period via Razorpay Orders API.
+    #                   Works without business KYC; we handle renewal in code.
+    #                   This is the default while the client's business isn't activated.
+    #   subscriptions — Razorpay Subscriptions with eMandate/UPI Autopay.
+    #                   Requires the merchant account to be KYC-activated.
+    billing_mode: Literal["orders", "subscriptions"] = "orders"
 
     @property
     def effective_billing_provider(self) -> Literal["mock", "razorpay"]:

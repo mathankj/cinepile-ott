@@ -29,6 +29,8 @@ from app.api.v1 import auth as v1_auth
 from app.api.v1 import episodes as v1_episodes
 from app.api.v1 import home as v1_home
 from app.api.v1 import me as v1_me
+from app.api.v1 import payments as v1_payments
+from app.api.v1 import test_checkout_page as v1_test_checkout
 from app.api.v1 import subscriptions as v1_subscriptions
 from app.api.v1 import titles as v1_titles
 from app.api.v1 import webhooks as v1_webhooks
@@ -117,6 +119,9 @@ def create_app() -> FastAPI:
     app.include_router(v1_home.router, prefix="/v1/home", tags=["home"])
     app.include_router(v1_admin.router, prefix="/v1/admin", tags=["admin"])
     app.include_router(v1_webhooks.router, prefix="/v1/webhooks", tags=["webhooks"])
+    app.include_router(v1_payments.router, prefix="/v1/payments", tags=["payments"])
+    # Dev-only test checkout page (no /v1/ prefix; used by humans in a browser)
+    app.include_router(v1_test_checkout.router, tags=["dev"])
 
     return app
 
