@@ -16,6 +16,10 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 15_000 },
   fullyParallel: false, // serial — tests share login state via the seed
+  // Cap workers locally: the dev Vite server + Neon free-tier + bcrypt can't
+  // service 6 simultaneous workers (login bcrypt alone is ~500 ms × N). One CPU
+  // worker on local keeps the suite fast enough (~3 min) without flakiness.
+  workers: process.env.CI ? undefined : 2,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [["github"], ["html"]] : [["list"], ["html", { open: "never" }]],
   globalSetup: "./tests/e2e/global-setup.ts",

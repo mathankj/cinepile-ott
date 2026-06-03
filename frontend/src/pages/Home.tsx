@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { motion } from "framer-motion";
 import { home } from "../api";
 import { Billboard } from "../components/title/Billboard";
 import { TitleRow } from "../components/title/TitleRow";
@@ -43,8 +44,15 @@ export default function Home() {
     <div>
       <Billboard title={hero} />
       <div className="-mt-16 md:-mt-24 relative z-10 pb-16">
-        {data.rows.map((row) => (
-          <TitleRow key={row.kind} title={row.title} items={row.items} />
+        {data.rows.map((row, i) => (
+          <motion.div
+            key={row.kind}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.15 + i * 0.08, ease: [0.5, 0, 0.1, 1] }}
+          >
+            <TitleRow title={row.title} items={row.items} />
+          </motion.div>
         ))}
       </div>
     </div>
@@ -54,16 +62,16 @@ export default function Home() {
 function HomeSkeleton() {
   return (
     <div className="animate-fade-in">
-      <div className="h-[50vh] md:h-[85vh] bg-[var(--color-bg-elevated)]" />
+      <div className="skeleton-shimmer h-[50vh] md:h-[85vh]" />
       <div className="space-y-8 px-4 md:px-8 lg:px-[60px] py-8">
         {[...Array(4)].map((_, i) => (
           <div key={i}>
-            <div className="mb-3 h-5 w-48 bg-[var(--color-bg-elevated)] rounded" />
+            <div className="skeleton-shimmer mb-3 h-5 w-48 rounded" />
             <div className="flex gap-1 overflow-hidden">
               {[...Array(6)].map((_, j) => (
                 <div
                   key={j}
-                  className="aspect-video flex-none rounded bg-[var(--color-bg-elevated)]"
+                  className="skeleton-shimmer aspect-video flex-none rounded"
                   style={{ width: 240 }}
                 />
               ))}

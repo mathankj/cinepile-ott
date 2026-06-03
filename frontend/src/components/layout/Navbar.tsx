@@ -110,7 +110,7 @@ export default function Navbar() {
             className="absolute inset-0 bg-black/70 animate-fade-in"
             onClick={() => setDrawerOpen(false)}
           />
-          <aside className="absolute right-0 top-0 h-full w-[280px] bg-[var(--color-bg)] border-l border-white/10 p-6 animate-slide-up">
+          <aside className="absolute right-0 top-0 h-full w-[280px] bg-[var(--color-bg)] border-l border-white/10 p-6 animate-slide-in-right">
             <button
               type="button"
               className="mb-6 text-white"

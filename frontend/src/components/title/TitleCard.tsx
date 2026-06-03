@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
+import { Play, Plus, Info } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { catalog } from "../../api";
 import type { TitleSummary } from "../../api/types";
@@ -19,6 +20,11 @@ import type { TitleSummary } from "../../api/types";
  * Visual conventions from the Netflix research:
  *  scale 1.08, 300ms, cubic-bezier(0.5, 0, 0.1, 1)
  *  rounded-[4px], no drop shadow, no overflow blur
+ *
+ * Hover reveal (Netflix mini-card pattern):
+ *  After 400ms hover, fade in an action overlay with Play / + List / More-info
+ *  icon buttons. Quick-hover stays fast (no flash); committed hover gets the
+ *  full preview. Touch devices skip the reveal — `@media (hover:none)`.
  */
 export function TitleCard({
   title,
@@ -47,12 +53,12 @@ export function TitleCard({
       to={`/title/${title.id}`}
       onMouseEnter={prefetch}
       onFocus={prefetch}
-      className="group relative block flex-none overflow-hidden rounded-[4px]"
+      className="group/card relative block flex-none rounded-[4px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/60"
     >
       <motion.div
         whileHover={{ scale: 1.08, zIndex: 10 }}
         transition={{ duration: 0.3, ease: [0.5, 0, 0.1, 1] }}
-        className="relative aspect-video w-full overflow-hidden rounded-[4px] bg-[var(--color-bg-elevated)]"
+        className="relative aspect-video w-full overflow-hidden rounded-[4px] bg-[var(--color-bg-elevated)] shadow-[0_0_0_0_rgba(0,0,0,0)] group-hover/card:shadow-[0_10px_30px_-10px_rgba(0,0,0,0.8)] transition-shadow duration-300"
       >
         {showImage ? (
           <img
@@ -67,8 +73,8 @@ export function TitleCard({
           <FallbackTile title={title.title} />
         )}
 
-        {/* Always-visible bottom title strip */}
-        <div className="absolute inset-x-0 bottom-0 flex items-end bg-gradient-to-t from-black/85 via-black/30 to-transparent p-2 pt-6">
+        {/* Idle bottom title strip — hides on hover so the reveal overlay can take over. */}
+        <div className="absolute inset-x-0 bottom-0 flex items-end bg-gradient-to-t from-black/85 via-black/30 to-transparent p-2 pt-6 opacity-100 transition-opacity duration-200 group-hover/card:opacity-0">
           <div className="min-w-0">
             <div className="truncate text-[13px] font-semibold leading-tight text-white">
               {title.title}
@@ -81,8 +87,46 @@ export function TitleCard({
           </div>
         </div>
 
+        {/* Hover reveal — Netflix mini-card. Fades in with a slight delay so quick
+            mouse-overs (scrolling past the row) don't flash. */}
+        <div
+          className="hover-reveal pointer-events-none absolute inset-0 flex flex-col justify-between bg-gradient-to-t from-black/95 via-black/60 to-transparent p-3 opacity-0 transition-opacity duration-200 ease-out group-hover/card:pointer-events-auto group-hover/card:opacity-100 group-hover/card:delay-[400ms]"
+        >
+          <div className="flex justify-end">
+            {title.is_free && (
+              <span className="rounded bg-[var(--color-brand)] px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-white">
+                FREE
+              </span>
+            )}
+          </div>
+          <div>
+            <div className="line-clamp-1 text-[14px] font-semibold text-white">{title.title}</div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-white/80">
+              {title.age_rating && (
+                <span className="rounded border border-white/40 px-1 py-0.5">{title.age_rating}</span>
+              )}
+              {title.release_year && <span>{title.release_year}</span>}
+              {title.runtime_minutes && <span>{title.runtime_minutes}m</span>}
+              <span className="uppercase tracking-wider">{title.type}</span>
+            </div>
+            <div className="mt-2 flex items-center gap-1.5">
+              <CardActionButton ariaLabel="Play" filled>
+                <Play size={14} className="fill-current" />
+              </CardActionButton>
+              <CardActionButton ariaLabel="Add to my list">
+                <Plus size={14} />
+              </CardActionButton>
+              <CardActionButton ariaLabel="More info">
+                <Info size={14} />
+              </CardActionButton>
+            </div>
+          </div>
+        </div>
+
+        {/* Idle FREE badge — top-left when not hovering. Mirrors the badge inside
+            the hover reveal so we never have both visible at once. */}
         {title.is_free && (
-          <div className="absolute left-2 top-2 rounded bg-[var(--color-brand)] px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-white shadow-lg">
+          <div className="absolute left-2 top-2 rounded bg-[var(--color-brand)] px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-white shadow-lg transition-opacity duration-200 group-hover/card:opacity-0">
             FREE
           </div>
         )}
@@ -97,6 +141,36 @@ export function TitleCard({
         )}
       </motion.div>
     </Link>
+  );
+}
+
+/**
+ * Round icon button used inside the hover reveal. Filled = primary CTA (Play).
+ * Stops link propagation so clicking Play doesn't bubble up into the card's
+ * outer <Link> twice.
+ */
+function CardActionButton({
+  children,
+  filled = false,
+  ariaLabel,
+}: {
+  children: React.ReactNode;
+  filled?: boolean;
+  ariaLabel: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      onClick={(e) => e.stopPropagation()}
+      className={`grid h-7 w-7 place-items-center rounded-full transition-colors ${
+        filled
+          ? "bg-white text-black hover:bg-white/85"
+          : "border border-white/60 text-white hover:border-white hover:bg-white/10"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
