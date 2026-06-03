@@ -65,9 +65,35 @@ async def list_plans(db: AsyncSession) -> list[Plan]:
 
 
 async def get_my_subscription(db: AsyncSession, user: User) -> Subscription | None:
+    """
+    Returns the user's most-recent ACTIVE subscription if any.
+
+    "Active" means: status='active' AND we're still inside its period.
+    A row whose current_period_end has passed is treated as inactive even if
+    status is still 'active' (because no background worker has flipped it to
+    'expired' yet). This is the only correct way to gate playback.
+    """
     stmt = (
         select(Subscription)
-        .where(Subscription.user_id == user.id, Subscription.status == "active")
+        .where(
+            Subscription.user_id == user.id,
+            Subscription.status == "active",
+            Subscription.current_period_end > _now(),
+        )
+        .order_by(Subscription.id.desc())
+    )
+    return await db.scalar(stmt)
+
+
+async def get_my_subscription_any_status(db: AsyncSession, user: User) -> Subscription | None:
+    """
+    Returns the user's most-recent subscription regardless of status/period.
+    Used by `/v1/subscriptions/me` so the frontend can show 'expired', 'pending',
+    'cancelled' badges. Playback gating uses get_my_subscription() instead.
+    """
+    stmt = (
+        select(Subscription)
+        .where(Subscription.user_id == user.id)
         .order_by(Subscription.id.desc())
     )
     return await db.scalar(stmt)
@@ -81,15 +107,42 @@ async def has_active_subscription(db: AsyncSession, user: User) -> bool:
 # ---- Subscribe / cancel — provider-routed ------------------------------------
 
 
+async def _get_pending_subscription(
+    db: AsyncSession, user: User, *, plan_id: int
+) -> Subscription | None:
+    """A pending sub for the same plan — used for idempotent retries."""
+    stmt = (
+        select(Subscription)
+        .where(
+            Subscription.user_id == user.id,
+            Subscription.status == "pending",
+            Subscription.plan_id == plan_id,
+        )
+        .order_by(Subscription.id.desc())
+    )
+    return await db.scalar(stmt)
+
+
 async def subscribe(db: AsyncSession, user: User, *, plan_code: str) -> Subscription:
-    """Create a subscription using the configured provider."""
+    """
+    Idempotent in the face of double-clicks / two-tabs races:
+    - If the user already has an ACTIVE sub for ANY plan → 409 AlreadySubscribed.
+    - If they have a PENDING sub for the SAME plan → return the existing pending row
+      (re-use the same Razorpay order + checkout URL). No double order, no double charge.
+    - Otherwise create a new pending sub via the configured provider/mode.
+    """
     plan = await db.scalar(select(Plan).where(Plan.code == plan_code, Plan.is_active.is_(True)))
     if plan is None:
         raise PlanNotFound
 
-    existing = await get_my_subscription(db, user)
-    if existing is not None:
+    existing_active = await get_my_subscription(db, user)
+    if existing_active is not None:
         raise AlreadySubscribed
+
+    existing_pending = await _get_pending_subscription(db, user, plan_id=plan.id)
+    if existing_pending is not None:
+        # Idempotent — same plan, same Razorpay order, same checkout URL.
+        return existing_pending
 
     settings = get_settings()
     provider = settings.effective_billing_provider

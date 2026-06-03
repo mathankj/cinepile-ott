@@ -33,3 +33,7 @@ class WatchProgress(Base):
     total_sec: Mapped[int] = mapped_column(nullable=False, default=0)
     completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     last_played_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # User explicitly removed this from Continue Watching. The row stays for
+    # resume-if-they-search-again behaviour (Netflix's pattern); the
+    # continue-watching list filters it out.
+    hidden_from_continue: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

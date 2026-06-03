@@ -182,26 +182,52 @@ async def get_episode(
 
 
 async def get_episode_by_id(db: AsyncSession, episode_id: int) -> Episode:
-    """Direct fetch — used by /v1/episodes/{id}/play."""
+    """Direct fetch — used by /v1/episodes/{id}/play.
+
+    Verifies the episode is published AND its parent series is published-and-not-deleted.
+    An episode of an archived/removed/soft-deleted series must not be playable, even
+    if the episode itself still shows status='published'.
+    """
     ep = await db.get(Episode, episode_id)
     if ep is None or ep.status != "published":
+        raise EpisodeNotFound
+
+    season = await db.get(Season, ep.season_id)
+    if season is None:
+        raise EpisodeNotFound
+    title = await db.get(Title, season.title_id)
+    if title is None or title.deleted_at is not None or title.status != "published":
         raise EpisodeNotFound
     return ep
 
 
+_SEARCH_MAX_LEN = 100
+
+
+def _escape_like(s: str) -> str:
+    """Escape LIKE wildcards so user input doesn't act as a wildcard.
+    Without this, q='%' matches every title — a real bug.
+    The ESCAPE clause must match in the SQL below."""
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 async def search_titles(db: AsyncSession, *, q: str, limit: int = 30) -> list[Title]:
     """V1.5: LIKE-based; swap to Postgres tsvector when catalog scales."""
-    if not q.strip():
+    q = (q or "").strip()
+    if not q:
         return []
-    needle = f"%{q.strip().lower()}%"
+    # Cap query length to prevent DoS via huge regex-like input
+    if len(q) > _SEARCH_MAX_LEN:
+        q = q[:_SEARCH_MAX_LEN]
+    needle = f"%{_escape_like(q.lower())}%"
     stmt = (
         select(Title)
         .where(
             _published_filter(),
             or_(
-                func.lower(Title.title).like(needle),
-                func.lower(Title.original_title).like(needle),
-                func.lower(Title.synopsis).like(needle),
+                func.lower(Title.title).like(needle, escape="\\"),
+                func.lower(Title.original_title).like(needle, escape="\\"),
+                func.lower(Title.synopsis).like(needle, escape="\\"),
             ),
         )
         .limit(limit)
@@ -211,3 +237,20 @@ async def search_titles(db: AsyncSession, *, q: str, limit: int = 30) -> list[Ti
 
 async def list_genres(db: AsyncSession) -> list[Genre]:
     return list((await db.scalars(select(Genre).order_by(Genre.kind, Genre.name))).all())
+
+
+async def list_coming_soon(db: AsyncSession, *, limit: int = 20) -> list[Title]:
+    """Titles in 'scheduled' status with a future publish_at — soonest first."""
+    now = _now()
+    stmt = (
+        select(Title)
+        .where(
+            Title.status == "scheduled",
+            Title.deleted_at.is_(None),
+            Title.publish_at.is_not(None),
+            Title.publish_at > now,
+        )
+        .order_by(Title.publish_at.asc())
+        .limit(limit)
+    )
+    return list((await db.scalars(stmt)).unique().all())

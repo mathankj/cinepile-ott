@@ -36,13 +36,41 @@ async def test_episode_progress(auth_client, make_series_with_episodes) -> None:
 
 
 @pytest.mark.asyncio
-async def test_completion_threshold(auth_client, make_title) -> None:
+async def test_completion_threshold_removes_from_continue(auth_client, make_title) -> None:
+    """Once a title is completed (>=90%), it disappears from Continue Watching.
+    Netflix's pattern — finished titles move to 'Watch Again' instead."""
     client, _, _ = auth_client
     t = await make_title(slug="m")
     await client.post(f"/v1/titles/{t.id}/progress", json={"position_sec": 950, "total_sec": 1000})
     cw = (await client.get("/v1/me/continue-watching")).json()
-    # Still in continue-watching (we don't auto-hide completed for V1.5)
-    assert cw["items"][0]["position_sec"] == 950
+    assert cw["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_below_threshold_stays_in_continue(auth_client, make_title) -> None:
+    client, _, _ = auth_client
+    t = await make_title(slug="m")
+    await client.post(f"/v1/titles/{t.id}/progress", json={"position_sec": 500, "total_sec": 1000})
+    cw = (await client.get("/v1/me/continue-watching")).json()
+    assert len(cw["items"]) == 1
+    assert cw["items"][0]["position_sec"] == 500
+
+
+@pytest.mark.asyncio
+async def test_remove_then_resume_unhides(auth_client, make_title) -> None:
+    """If user removes a title from Continue Watching, then later resumes
+    it (via search or direct deep link), it should re-appear."""
+    client, _, _ = auth_client
+    t = await make_title(slug="m")
+    await client.post(f"/v1/titles/{t.id}/progress", json={"position_sec": 100, "total_sec": 1000})
+    await client.delete(f"/v1/me/continue-watching/{t.id}")
+    assert (await client.get("/v1/me/continue-watching")).json()["items"] == []
+
+    # Resume — should re-surface
+    await client.post(f"/v1/titles/{t.id}/progress", json={"position_sec": 200, "total_sec": 1000})
+    cw = (await client.get("/v1/me/continue-watching")).json()
+    assert len(cw["items"]) == 1
+    assert cw["items"][0]["position_sec"] == 200
 
 
 @pytest.mark.asyncio

@@ -23,7 +23,12 @@ from app.services import storage as storage_svc
 from app.services.billing import has_active_subscription
 
 
-PLAYBACK_TTL_MINUTES = 240  # 4h — long enough to finish a film comfortably
+# Manifest TTL is intentionally short — a leaked URL is only useful for the
+# remaining TTL. Players refresh the manifest periodically anyway. 15 min
+# matches Mux / CloudFront signed-URL recommendations for video manifests.
+# Segment URLs (Phase 2 when we have a real CDN) can be longer (~2h) because
+# they are per-byte-range.
+PLAYBACK_TTL_MINUTES = 15
 
 
 class NotEntitled(Exception):

@@ -16,6 +16,7 @@ from app.models.title import Title, TitleAsset, titles_genres
 from app.models.user import User
 from app.models.watch_progress import WatchProgress
 from app.models.watchlist import WatchlistItem
+from app.models.webhook_event import WebhookEvent
 
 __all__ = [
     "AuditLog",
@@ -38,5 +39,6 @@ __all__ = [
     "User",
     "WatchProgress",
     "WatchlistItem",
+    "WebhookEvent",
     "titles_genres",
 ]

@@ -44,15 +44,42 @@ _session_factory: async_sessionmaker[Any] | None = None
 
 
 def get_engine() -> AsyncEngine:
+    """
+    Create the async engine.
+
+    On Neon's pooler endpoint (`-pooler.` hostname), PgBouncer is in TRANSACTION
+    pooling mode which does NOT support prepared statements. We disable asyncpg's
+    statement cache when we detect the pooler hostname; otherwise we'd hit
+    "prepared statement does not exist" errors at random.
+
+    `statement_timeout` and `idle_in_transaction_session_timeout` are set as
+    server-side parameters so a runaway query can't park a connection.
+    """
     global _engine
     if _engine is None:
         settings = get_settings()
+        url = settings.database_url
+        is_pooler = "-pooler" in url
+
+        connect_args: dict = {}
+        if "asyncpg" in url:
+            connect_args["server_settings"] = {
+                "statement_timeout": "10000",  # ms; kills any single query > 10s
+                "idle_in_transaction_session_timeout": "30000",  # ms; releases stuck txns
+            }
+            if is_pooler:
+                # PgBouncer transaction mode incompatible with prepared statements.
+                connect_args["statement_cache_size"] = 0
+                connect_args["prepared_statement_cache_size"] = 0
+
         _engine = create_async_engine(
-            settings.database_url,
+            url,
             echo=False,  # set true for SQL debugging; noisy in prod
             pool_pre_ping=True,
             pool_size=10,
             max_overflow=20,
+            pool_recycle=300,  # recycle connections every 5 min (Neon idle suspend)
+            connect_args=connect_args,
         )
     return _engine
 

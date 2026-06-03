@@ -20,11 +20,13 @@ Functions:
 """
 from __future__ import annotations
 
+import asyncio
 from functools import lru_cache
 from typing import BinaryIO
 
 import boto3
 from botocore.client import Config
+from fastapi.concurrency import run_in_threadpool
 
 from app.core.config import get_settings
 
@@ -64,11 +66,14 @@ def _public_url_for(key: str) -> str:
 def upload_fileobj(
     *, key: str, file_obj: BinaryIO, content_type: str | None = None
 ) -> str:
-    """Upload a file-like object.
+    """Upload a file-like object (SYNC — call via run_in_threadpool from async).
 
     Returns the **stored reference** for asset.storage_url:
       - the full public URL if STORAGE_PUBLIC_URL is set
       - the bucket key itself otherwise (private bucket — playback signs at read time)
+
+    This is the sync version used internally. Async routes should prefer
+    `await aupload_fileobj(...)` which runs it on the threadpool.
     """
     settings = get_settings()
     extra: dict = {}
@@ -80,12 +85,29 @@ def upload_fileobj(
     return key
 
 
+async def aupload_fileobj(
+    *, key: str, file_obj: BinaryIO, content_type: str | None = None
+) -> str:
+    """Async wrapper — runs the sync boto3 upload on the threadpool so the
+    FastAPI event loop is never blocked on the network. Critical at any scale."""
+    return await run_in_threadpool(
+        upload_fileobj, key=key, file_obj=file_obj, content_type=content_type
+    )
+
+
 def delete(key: str) -> None:
+    """Sync — use adelete() from async code."""
     settings = get_settings()
     _client().delete_object(Bucket=settings.storage_bucket, Key=key)
 
 
+async def adelete(key: str) -> None:
+    await run_in_threadpool(delete, key)
+
+
 def generate_presigned_url(key: str, *, ttl_seconds: int | None = None) -> str:
+    """Sync. CPU-only (no network), so wrapping in threadpool is optional —
+    but we provide an async helper for consistency."""
     settings = get_settings()
     ttl = ttl_seconds if ttl_seconds is not None else settings.storage_presigned_ttl_seconds
     return _client().generate_presigned_url(
@@ -100,6 +122,9 @@ def resolve_url(stored_ref: str, *, ttl_seconds: int | None = None) -> str:
     Turn whatever's in asset.storage_url into a playable URL:
       - already a full URL (`http://` or `https://`) → return as-is
       - else treat as a bucket key → return a presigned URL with TTL
+
+    SYNC. Sign-URL is a local crypto op (HMAC-SHA256), not a network call, so
+    wrapping in threadpool isn't necessary in hot paths.
     """
     if not stored_ref:
         return stored_ref

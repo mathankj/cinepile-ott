@@ -23,7 +23,12 @@ async def list_plans(db: DbSession) -> list[PlanRead]:
 
 @router.get("/subscriptions/me", response_model=SubscriptionRead | None)
 async def get_my_subscription(db: DbSession, user: CurrentUser) -> SubscriptionRead | None:
-    sub = await billing.get_my_subscription(db, user)
+    """
+    Returns the user's most-recent subscription regardless of status — so the
+    frontend can show 'pending checkout', 'expired', 'cancelled', 'past_due'
+    banners. Playback gating uses a stricter check (active + still in period).
+    """
+    sub = await billing.get_my_subscription_any_status(db, user)
     return SubscriptionRead.model_validate(sub) if sub else None
 
 

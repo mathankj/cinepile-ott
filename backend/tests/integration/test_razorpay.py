@@ -219,10 +219,11 @@ async def test_orders_webhook_payment_failed_keeps_pending(
         headers={"X-Razorpay-Signature": sig, "Content-Type": "application/json"},
     )
     assert resp.status_code == 200
-    # User retains pending status so they can retry
+    # User retains pending status so they can retry; /me now surfaces any-status
+    # subs so the frontend can show "Pending payment — retry" banners.
     me = await cm_client.get("/v1/subscriptions/me")
-    # subscriptions/me only returns ACTIVE subs; pending → None
-    assert me.json() is None
+    assert me.json() is not None
+    assert me.json()["status"] == "pending"
 
 
 # ---- Webhook signature gating (mode-independent) -----------------------------

@@ -82,6 +82,8 @@ async def upsert_movie_progress(
         row.total_sec = total_sec
         row.completed = completed
         row.last_played_at = now
+        # Un-hide on resume — if the user comes back to watch, surface it again
+        row.hidden_from_continue = False
     await db.flush()
     return row
 
@@ -117,6 +119,8 @@ async def upsert_episode_progress(
         row.total_sec = total_sec
         row.completed = completed
         row.last_played_at = now
+        # Un-hide on resume — if the user comes back to watch, surface it again
+        row.hidden_from_continue = False
     await db.flush()
     return row
 
@@ -126,8 +130,13 @@ async def continue_watching(
 ) -> list[dict]:
     """
     Returns [{title, episode?, position_sec, total_sec, last_played_at}].
-    For series: most-recent non-completed (or last completed if all done) episode
-    per series, keyed by title_id.
+
+    Filters applied:
+      - title must be published and not soft-deleted
+      - row not hidden via "Remove from Continue Watching"
+      - row not completed (completed titles move to a separate "Watch Again" row)
+
+    For series: most-recent in-progress episode per series, keyed by title_id.
     """
     stmt = (
         select(WatchProgress, Title, Episode, Season)
@@ -136,6 +145,8 @@ async def continue_watching(
         .outerjoin(Season, Season.id == Episode.season_id)
         .where(
             WatchProgress.user_id == user.id,
+            WatchProgress.hidden_from_continue.is_(False),
+            WatchProgress.completed.is_(False),
             Title.deleted_at.is_(None),
             Title.status == "published",
         )
@@ -163,14 +174,24 @@ async def continue_watching(
     return list(grouped.values())
 
 
-async def delete_title_progress(db: AsyncSession, user: User, *, title_id: int) -> int:
-    """Clear all progress (movie + every series episode) for a title."""
+async def hide_title_from_continue(db: AsyncSession, user: User, *, title_id: int) -> int:
+    """
+    "Remove from Continue Watching" — soft-hide, don't hard-delete.
+    The row stays so if the user searches the title later and resumes, their
+    position is intact. This is Netflix's documented behaviour.
+    """
+    from sqlalchemy import update as sa_update
+
     res = await db.execute(
-        delete(WatchProgress).where(
-            WatchProgress.user_id == user.id, WatchProgress.title_id == title_id
-        )
+        sa_update(WatchProgress)
+        .where(WatchProgress.user_id == user.id, WatchProgress.title_id == title_id)
+        .values(hidden_from_continue=True)
     )
     return res.rowcount or 0
+
+
+# Backward-compat alias used by older code; behavior is now soft-hide.
+delete_title_progress = hide_title_from_continue
 
 
 async def finished_title_ids(db: AsyncSession, user: User, *, limit: int = 3) -> list[int]:

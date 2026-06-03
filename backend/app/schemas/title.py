@@ -192,6 +192,9 @@ class TitleCreate(BaseModel):
 
 
 class TitleUpdate(BaseModel):
+    """Update schema — extra='forbid' blocks mass-assignment of fields we didn't list."""
+    model_config = ConfigDict(extra="forbid")
+
     title: str | None = None
     original_title: str | None = None
     synopsis: str | None = None
@@ -222,6 +225,7 @@ class SeasonCreate(BaseModel):
 
 
 class SeasonUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     name: str | None = None
     synopsis: str | None = None
     poster_url: str | None = None
@@ -246,6 +250,7 @@ class EpisodeCreate(BaseModel):
 
 
 class EpisodeUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     name: str | None = None
     synopsis: str | None = None
     runtime_seconds: int | None = None

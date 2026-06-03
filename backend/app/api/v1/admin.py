@@ -288,9 +288,21 @@ async def list_admin_genres(db: DbSession, _: ContentRoleUser) -> list[GenreRead
 # ---- Video upload (R2) ------------------------------------------------------
 
 
-# Limit: 1 GB per upload to protect process memory. R2 free tier is 10 GB total
-# so this is plenty for dev. Production deploys may bump this on the LB+nginx side too.
+# Limit: 1 GB per upload to protect process memory. Storage free tiers are
+# 10 GB total so this is plenty for dev. Production deploys may bump this on
+# the LB+nginx side too.
 _MAX_UPLOAD_BYTES = 1024 * 1024 * 1024
+
+_ALLOWED_VIDEO_EXTS = {".mp4", ".m4v", ".mov", ".webm", ".m3u8"}
+_ALLOWED_VIDEO_MIMES = {
+    "video/mp4",
+    "video/quicktime",
+    "video/x-m4v",
+    "video/webm",
+    "application/vnd.apple.mpegurl",
+    "application/x-mpegurl",
+    "application/octet-stream",  # some browsers send this for video
+}
 
 
 def _ensure_storage() -> None:
@@ -304,6 +316,69 @@ def _ensure_storage() -> None:
                 }
             },
         )
+
+
+def _validate_upload(file) -> None:
+    """Sniff filename + content-type. Cheap rejection of clearly-wrong uploads."""
+    ext = _ext_of(file.filename).lower()
+    if ext not in _ALLOWED_VIDEO_EXTS:
+        raise HTTPException(
+            415,
+            detail={"error": {"code": "unsupported_media", "message": f"Extension {ext} is not allowed."}},
+        )
+    if file.content_type and file.content_type not in _ALLOWED_VIDEO_MIMES:
+        raise HTTPException(
+            415,
+            detail={
+                "error": {
+                    "code": "unsupported_media",
+                    "message": f"Content-Type '{file.content_type}' is not allowed.",
+                }
+            },
+        )
+
+
+class _SizeLimitedStream:
+    """Wraps an UploadFile.file (SpooledTemporaryFile) and raises if total read
+    bytes exceed the limit. boto3.upload_fileobj reads in chunks so the limit
+    triggers early — we don't have to buffer the whole upload."""
+
+    def __init__(self, stream, max_bytes: int):
+        self._stream = stream
+        self._max = max_bytes
+        self._read = 0
+
+    def read(self, n: int = -1):
+        chunk = self._stream.read(n)
+        if not chunk:
+            return chunk
+        self._read += len(chunk)
+        if self._read > self._max:
+            raise HTTPException(
+                413,
+                detail={
+                    "error": {
+                        "code": "payload_too_large",
+                        "message": f"Upload exceeds the {_MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.",
+                    }
+                },
+            )
+        return chunk
+
+    # boto3 may also call .seek / .tell / .close on the stream (it does for
+    # multipart uploads). Pass them through.
+    def seek(self, *a, **kw):
+        return self._stream.seek(*a, **kw)
+
+    def tell(self):
+        return self._stream.tell()
+
+    def close(self):
+        return self._stream.close()
+
+    @property
+    def closed(self):
+        return getattr(self._stream, "closed", False)
 
 
 @router.post("/titles/{title_id}/upload-video")
@@ -331,10 +406,13 @@ async def upload_title_video(
             },
         )
 
-    # Stream into storage (boto3 handles multipart automatically).
+    _validate_upload(file)
+    # Stream into storage with a hard size limit (raises 413 mid-stream if exceeded).
     key = f"titles/{title_id}/master{_ext_of(file.filename)}"
-    stored_ref = storage_svc.upload_fileobj(
-        key=key, file_obj=file.file, content_type=file.content_type or "video/mp4"
+    stored_ref = await storage_svc.aupload_fileobj(
+        key=key,
+        file_obj=_SizeLimitedStream(file.file, _MAX_UPLOAD_BYTES),
+        content_type=file.content_type or "video/mp4",
     )
 
     # Replace any existing hls_manifest pointer
@@ -378,9 +456,12 @@ async def upload_episode_video(
             404, detail={"error": {"code": "episode_not_found", "message": "Episode not found."}}
         )
 
+    _validate_upload(file)
     key = f"episodes/{episode_id}/master{_ext_of(file.filename)}"
-    stored_ref = storage_svc.upload_fileobj(
-        key=key, file_obj=file.file, content_type=file.content_type or "video/mp4"
+    stored_ref = await storage_svc.aupload_fileobj(
+        key=key,
+        file_obj=_SizeLimitedStream(file.file, _MAX_UPLOAD_BYTES),
+        content_type=file.content_type or "video/mp4",
     )
 
     await db.execute(

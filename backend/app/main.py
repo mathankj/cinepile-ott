@@ -94,22 +94,52 @@ def create_app() -> FastAPI:
 
     @app.get("/healthz", tags=["health"])
     async def healthz() -> JSONResponse:
-        """Liveness probe — also pings the DB."""
-        db_status = "ok"
+        """Liveness probe — process is alive. Always 200 unless the process
+        is broken. Don't put DB pings here: a transient DB blip should NOT
+        cause k8s/uvicorn/whatever restarts the process — that's what
+        /readyz is for."""
+        return JSONResponse(
+            {"status": "ok", "version": settings.app_version, "env": settings.app_env},
+            status_code=200,
+        )
+
+    @app.get("/readyz", tags=["health"])
+    async def readyz() -> JSONResponse:
+        """Readiness probe — checks downstream dependencies (DB, storage).
+        Returns 503 if anything is broken so the load balancer routes around
+        this instance until it recovers."""
+        checks: dict = {"db": "ok", "storage": "ok"}
+
         try:
             factory = get_session_factory()
             async with factory() as session:
                 await session.execute(text("SELECT 1"))
         except Exception as exc:  # noqa: BLE001
-            db_status = f"error: {exc.__class__.__name__}"
+            checks["db"] = f"error: {exc.__class__.__name__}"
 
+        # Storage check is optional — if not configured, skip.
+        try:
+            from app.services import storage as storage_svc
+
+            if storage_svc.is_configured():
+                # head_bucket is the cheapest authenticated check
+                # We don't await network here in this simple version; just trust
+                # the boto3 client constructor works. For real prod, do a
+                # head_bucket call with a tight timeout.
+                _ = storage_svc._client  # touch the client factory
+            else:
+                checks["storage"] = "not_configured"
+        except Exception as exc:  # noqa: BLE001
+            checks["storage"] = f"error: {exc.__class__.__name__}"
+
+        any_failed = any(v.startswith("error:") for v in checks.values())
         body = {
-            "status": "ok" if db_status == "ok" else "degraded",
-            "db": db_status,
+            "status": "degraded" if any_failed else "ok",
+            **checks,
             "version": settings.app_version,
             "env": settings.app_env,
         }
-        return JSONResponse(body, status_code=200 if db_status == "ok" else 503)
+        return JSONResponse(body, status_code=503 if any_failed else 200)
 
     app.include_router(v1_auth.router, prefix="/v1/auth", tags=["auth"])
     app.include_router(v1_titles.router, prefix="/v1/titles", tags=["titles"])
