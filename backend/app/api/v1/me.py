@@ -10,6 +10,8 @@ from app.api.deps import CurrentUser, DbSession
 from app.schemas.reaction import (
     ContinueWatchingItem,
     ContinueWatchingList,
+    HistoryItem,
+    HistoryList,
     ProgressUpdate,
     ReactionList,
     ReactionRead,
@@ -56,11 +58,68 @@ async def get_continue_watching(db: DbSession, user: CurrentUser) -> ContinueWat
 
 @router.delete("/me/continue-watching/{title_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_continue_watching(title_id: int, db: DbSession, user: CurrentUser) -> None:
-    deleted = await history_svc.delete_title_progress(db, user, title_id=title_id)
+    """Soft-hide from Continue Watching. Row stays so progress is preserved if
+    the user comes back via search/deep-link."""
+    deleted = await history_svc.hide_title_from_continue(db, user, title_id=title_id)
     if deleted == 0:
         raise HTTPException(
             404,
             detail={"error": {"code": "not_found", "message": "No progress for that title."}},
+        )
+
+
+# ---- Full viewing history ----------------------------------------------------
+
+
+@router.get("/me/history", response_model=HistoryList, tags=["history"])
+async def get_history(
+    db: DbSession,
+    user: CurrentUser,
+    page: int = 1,
+    page_size: int = 20,
+) -> HistoryList:
+    """All titles the user has watched or paused — paginated, newest first.
+
+    Includes:
+      - in-progress titles (also visible in /me/continue-watching)
+      - completed titles (no longer in continue-watching)
+      - titles hidden from continue-watching
+
+    Distinct from /me/continue-watching which is the curated feed.
+    """
+    from app.schemas.title import TitleSummary
+
+    items, total = await history_svc.list_full_history(db, user, page=page, page_size=page_size)
+    return HistoryList(
+        items=[
+            HistoryItem(
+                title=TitleSummary.model_validate(t),
+                position_sec=wp.position_sec,
+                total_sec=wp.total_sec,
+                completed=wp.completed,
+                hidden_from_continue=wp.hidden_from_continue,
+                last_played_at=wp.last_played_at,
+            )
+            for wp, t in items
+        ],
+        page=page,
+        page_size=page_size,
+        total=total,
+    )
+
+
+@router.delete("/me/history/{title_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["history"])
+async def delete_history(title_id: int, db: DbSession, user: CurrentUser) -> None:
+    """Hard-delete every WatchProgress row for this title for the current user.
+
+    Different from DELETE /me/continue-watching/{id} (which soft-hides):
+    this one is "make this title disappear from my account entirely".
+    """
+    deleted = await history_svc.remove_from_history(db, user, title_id=title_id)
+    if deleted == 0:
+        raise HTTPException(
+            404,
+            detail={"error": {"code": "not_found", "message": "No history for that title."}},
         )
 
 

@@ -53,13 +53,46 @@ def _build_token(user_id: int, ref_type: str, ref_id: int, url: str, expires_at:
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-async def _ensure_entitled(db: AsyncSession, user: User) -> None:
+async def _ensure_entitled(
+    db: AsyncSession, user: User, *, title: Title | None = None, episode: Episode | None = None
+) -> None:
+    """Subscription gate, with free-content bypass.
+
+    Order of checks:
+      1. If episode.is_free → allow (first-episode-free pattern).
+      2. If title.is_free → allow (free movie or wholly-free series).
+      3. Else → require an active subscription.
+    """
+    if episode is not None and episode.is_free:
+        return
+    if title is not None and title.is_free:
+        return
     if not await has_active_subscription(db, user):
         raise NotEntitled
 
 
+async def _lookup_resume(
+    db: AsyncSession, user_id: int, title_id: int, episode_id: int | None
+) -> tuple[int | None, int | None]:
+    """Returns (position_sec, total_sec) for a user's prior progress, if any.
+    None when this is the user's first time playing this content."""
+    from sqlalchemy import and_, select as _select
+
+    from app.models.watch_progress import WatchProgress
+
+    where = [WatchProgress.user_id == user_id, WatchProgress.title_id == title_id]
+    if episode_id is None:
+        where.append(WatchProgress.episode_id.is_(None))
+    else:
+        where.append(WatchProgress.episode_id == episode_id)
+    row = await db.scalar(_select(WatchProgress).where(and_(*where)))
+    if row is None:
+        return None, None
+    return row.position_sec, row.total_sec
+
+
 async def issue_movie_ticket(db: AsyncSession, user: User, title: Title) -> dict:
-    await _ensure_entitled(db, user)
+    await _ensure_entitled(db, user, title=title)
     manifest = next((a for a in title.assets if a.kind == "hls_manifest"), None)
     if manifest is None:
         raise NoPlayableAsset
@@ -72,17 +105,26 @@ async def issue_movie_ticket(db: AsyncSession, user: User, title: Title) -> dict
     # Bump view counter for Trending row.
     await db.execute(update(Title).where(Title.id == title.id).values(view_count=Title.view_count + 1))
 
+    # Resume hint — saves the frontend a round trip to /me/continue-watching
+    resume_at, stored_total = await _lookup_resume(db, user.id, title.id, None)
+    total_sec = stored_total or (title.runtime_minutes * 60 if title.runtime_minutes else None)
+
     return {
         "manifest_url": playback_url,
         "token": token,
         "expires_at": expires_at,
         "ref_id": title.id,
         "ref_type": "title",
+        "resume_at_sec": resume_at,
+        "total_sec": total_sec,
     }
 
 
 async def issue_episode_ticket(db: AsyncSession, user: User, episode: Episode) -> dict:
-    await _ensure_entitled(db, user)
+    # Episode free overrides; otherwise check parent series's is_free; otherwise need sub.
+    season = await db.get(Season, episode.season_id)
+    parent_title = await db.get(Title, season.title_id) if season else None
+    await _ensure_entitled(db, user, title=parent_title, episode=episode)
     manifest = next((a for a in episode.assets if a.kind == "hls_manifest"), None)
     if manifest is None:
         raise NoPlayableAsset
@@ -90,11 +132,15 @@ async def issue_episode_ticket(db: AsyncSession, user: User, episode: Episode) -
     expires_at = datetime.now(tz=timezone.utc) + timedelta(minutes=PLAYBACK_TTL_MINUTES)
     token = _build_token(user.id, "episode", episode.id, playback_url, expires_at)
 
-    season = await db.get(Season, episode.season_id)
     if season is not None:
         await db.execute(
             update(Title).where(Title.id == season.title_id).values(view_count=Title.view_count + 1)
         )
+
+    # Resume + total — keyed on (user, title, episode)
+    parent_title_id = season.title_id if season else 0
+    resume_at, stored_total = await _lookup_resume(db, user.id, parent_title_id, episode.id)
+    total_sec = stored_total or episode.runtime_seconds
 
     return {
         "manifest_url": playback_url,
@@ -102,4 +148,6 @@ async def issue_episode_ticket(db: AsyncSession, user: User, episode: Episode) -
         "expires_at": expires_at,
         "ref_id": episode.id,
         "ref_type": "episode",
+        "resume_at_sec": resume_at,
+        "total_sec": total_sec,
     }

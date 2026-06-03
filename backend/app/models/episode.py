@@ -46,6 +46,12 @@ class Episode(Base):
     publish_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # When True, unsubscribed users can play this episode. Use case: first-episode-free
+    # pattern (admin sets E1 of every series to is_free=True). Overrides the parent
+    # series.is_free only when explicitly set; if you want every episode of a series
+    # free, set Title.is_free=True instead.
+    is_free: Mapped[bool] = mapped_column(default=False, nullable=False)
+
     season: Mapped["Season"] = relationship("Season", back_populates="episodes")
     assets: Mapped[list["EpisodeAsset"]] = relationship(
         "EpisodeAsset", back_populates="episode", cascade="all, delete-orphan", lazy="selectin"

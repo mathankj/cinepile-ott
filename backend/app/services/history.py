@@ -194,6 +194,61 @@ async def hide_title_from_continue(db: AsyncSession, user: User, *, title_id: in
 delete_title_progress = hide_title_from_continue
 
 
+async def list_full_history(
+    db: AsyncSession, user: User, *, page: int = 1, page_size: int = 20
+) -> tuple[list[tuple[WatchProgress, Title]], int]:
+    """
+    Full viewing history — all titles the user has ever pressed play on.
+    Differs from continue_watching() which filters to in-progress + visible.
+    Returns finished, paused, AND hidden-from-continue rows so the user can
+    review and manage their full activity (Netflix's "Viewing Activity" feature).
+    """
+    from sqlalchemy import func
+
+    page = max(1, page)
+    page_size = max(1, min(100, page_size))
+
+    base_where = [
+        WatchProgress.user_id == user.id,
+        Title.deleted_at.is_(None),
+    ]
+
+    # For series, multiple episode-rows roll up to one history entry per title.
+    # We pick the most-recent row per title (Postgres DISTINCT ON could help; for
+    # portability we do it in Python after fetching with ORDER BY last_played_at).
+    stmt = (
+        select(WatchProgress, Title)
+        .join(Title, Title.id == WatchProgress.title_id)
+        .where(*base_where)
+        .order_by(WatchProgress.last_played_at.desc())
+    )
+    rows = (await db.execute(stmt)).all()
+
+    seen_titles: set[int] = set()
+    deduped: list[tuple[WatchProgress, Title]] = []
+    for wp, t in rows:
+        if t.id in seen_titles:
+            continue
+        seen_titles.add(t.id)
+        deduped.append((wp, t))
+
+    total = len(deduped)
+    start = (page - 1) * page_size
+    return deduped[start : start + page_size], total
+
+
+async def remove_from_history(db: AsyncSession, user: User, *, title_id: int) -> int:
+    """Hard-delete every WatchProgress row for (user, title) — the user genuinely
+    doesn't want any record of this title in their account. Different from
+    hide_title_from_continue() which is soft-hide for the continue-watching row."""
+    res = await db.execute(
+        delete(WatchProgress).where(
+            WatchProgress.user_id == user.id, WatchProgress.title_id == title_id
+        )
+    )
+    return res.rowcount or 0
+
+
 async def finished_title_ids(db: AsyncSession, user: User, *, limit: int = 3) -> list[int]:
     """The user's N most recently finished titles. Used by Because-You-Watched."""
     stmt = (

@@ -76,6 +76,8 @@ class TitleSummary(BaseModel):
     release_year: int | None = None
     age_rating: str | None = None
     runtime_minutes: int | None = None
+    # Frontend renders a "FREE" badge when True
+    is_free: bool = False
 
 
 class SeasonSummary(BaseModel):
@@ -109,6 +111,7 @@ class TitleDetail(BaseModel):
     backdrop_url: str | None
     trailer_url: str | None
     format_tag: str | None
+    is_free: bool = False
 
     status: str
     published_at: datetime | None
@@ -151,6 +154,7 @@ class EpisodeRead(BaseModel):
     next_episode_cue_sec: int | None
     status: str
     published_at: datetime | None
+    is_free: bool = False
     assets: list[EpisodeAssetRead] = Field(default_factory=list)
 
 
@@ -189,6 +193,7 @@ class TitleCreate(BaseModel):
     hls_manifest_url: str | None = None
     status: Literal["draft", "scheduled", "published", "archived"] = "draft"
     publish_at: datetime | None = None
+    is_free: bool = False
 
 
 class TitleUpdate(BaseModel):
@@ -210,6 +215,7 @@ class TitleUpdate(BaseModel):
     format_tag: str | None = None
     genre_slugs: list[str] | None = None
     hls_manifest_url: str | None = None
+    is_free: bool | None = None
 
 
 class TitleSchedule(BaseModel):
@@ -247,6 +253,7 @@ class EpisodeCreate(BaseModel):
     hls_manifest_url: str | None = None
     status: Literal["draft", "scheduled", "published", "archived"] = "draft"
     publish_at: datetime | None = None
+    is_free: bool = False
 
 
 class EpisodeUpdate(BaseModel):
@@ -263,6 +270,7 @@ class EpisodeUpdate(BaseModel):
     next_episode_cue_sec: int | None = None
     hls_manifest_url: str | None = None
     ordinal: int | None = None
+    is_free: bool | None = None
 
 
 class AudioTracksReplace(BaseModel):

@@ -72,15 +72,18 @@ def get_engine() -> AsyncEngine:
                 connect_args["statement_cache_size"] = 0
                 connect_args["prepared_statement_cache_size"] = 0
 
-        _engine = create_async_engine(
-            url,
-            echo=False,  # set true for SQL debugging; noisy in prod
-            pool_pre_ping=True,
-            pool_size=10,
-            max_overflow=20,
-            pool_recycle=300,  # recycle connections every 5 min (Neon idle suspend)
-            connect_args=connect_args,
-        )
+        engine_kwargs: dict = {
+            "echo": False,
+            "pool_pre_ping": True,
+            "connect_args": connect_args,
+        }
+        # SQLite (used in tests) uses StaticPool which doesn't accept pool_size etc.
+        if "sqlite" not in url:
+            engine_kwargs["pool_size"] = 10
+            engine_kwargs["max_overflow"] = 20
+            engine_kwargs["pool_recycle"] = 300  # Neon idle suspend safety
+
+        _engine = create_async_engine(url, **engine_kwargs)
     return _engine
 
 

@@ -54,6 +54,12 @@ class Title(Base):
     publish_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # When True, unsubscribed users can play this title. For series this means
+    # ALL episodes are free unless their own is_free is explicitly False (use
+    # case: a free series). For first-episode-free (Hoichoi/Aha pattern), leave
+    # this False and set the individual episode's is_free=True.
+    is_free: Mapped[bool] = mapped_column(default=False, nullable=False)
+
     # Denormalized counter — bumped on playback. Used by Trending row.
     view_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
 

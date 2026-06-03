@@ -50,6 +50,23 @@ class ContinueWatchingList(BaseModel):
     items: list[ContinueWatchingItem]
 
 
+class HistoryItem(BaseModel):
+    """Row in /v1/me/history — every title the user has touched, regardless of state."""
+    title: TitleSummary
+    position_sec: int
+    total_sec: int
+    completed: bool
+    hidden_from_continue: bool
+    last_played_at: datetime
+
+
+class HistoryList(BaseModel):
+    items: list[HistoryItem]
+    page: int
+    page_size: int
+    total: int
+
+
 class ProgressUpdate(BaseModel):
     """Generic — used for both movie and episode progress."""
     position_sec: int
