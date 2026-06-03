@@ -1,4 +1,4 @@
-# Database schema — V1.5
+# Database schema — V1.5 (post-QA)
 
 > **Source of truth:** the SQLAlchemy models in `backend/app/models/`. This document explains *why* each table looks the way it does. When the code diverges, the code wins — open a PR to fix this doc.
 
@@ -51,6 +51,7 @@ The "unified content" table — movies + series share this row.
 | publish_at | TIMESTAMPTZ NULL | for `status=scheduled`, when to flip to `published` |
 | published_at | TIMESTAMPTZ NULL | actual time it went live |
 | view_count | BIGINT NOT NULL DEFAULT 0 | denormalized counter for trending; incremented in `playback.issue_ticket` |
+| **is_free** | **BOOLEAN NOT NULL DEFAULT false** | **When true, unsubscribed users can play this title. For series this means all episodes are free unless their own is_free overrides. For first-episode-free pattern, leave this False and set Episode.is_free on E1.** |
 | deleted_at | TIMESTAMPTZ NULL | soft-delete |
 
 Indexes: `slug` unique, `(status, published_at)` for default listings, `(type, status)`, `view_count DESC` for trending, GIN on `synopsis||title` (Postgres) for search (deferred — V1.5 uses LIKE).
@@ -92,6 +93,7 @@ Unique constraint: `(title_id, season_number)`.
 | status | TEXT NOT NULL DEFAULT 'draft' | independent of parent title status (weekly releases) |
 | publish_at | TIMESTAMPTZ NULL | |
 | published_at | TIMESTAMPTZ NULL | |
+| **is_free** | **BOOLEAN NOT NULL DEFAULT false** | **first-episode-free pattern: admin sets E1.is_free=True so unsubscribed users can sample. Independent of Title.is_free.** |
 
 Unique constraint: `(season_id, episode_number)`. Index on `(season_id, ordinal)`.
 
@@ -219,12 +221,59 @@ Per-user, per-watchable. Replaces V1's `watch_history`.
 | total_sec | INT NOT NULL DEFAULT 0 | |
 | completed | BOOLEAN NOT NULL DEFAULT false | true when `position_sec / total_sec >= 0.9` |
 | last_played_at | TIMESTAMPTZ NOT NULL | for continue-watching ordering |
+| **hidden_from_continue** | **BOOLEAN NOT NULL DEFAULT false** | **User explicitly removed via DELETE /me/continue-watching/{id}. Row stays so resume works if they come back via search. Reset to false on next progress write.** |
 
 Unique constraint: `(user_id, title_id, episode_id)`. SQLite treats NULL as distinct in unique indexes (same as Postgres). Indexes: `(user_id, last_played_at DESC)`.
 
-## Subscriptions (unchanged from V1)
+Continue-watching query filters: `hidden_from_continue=false AND completed=false AND title.status='published' AND title.deleted_at IS NULL`.
+Full-history query (`/v1/me/history`) ignores hidden_from_continue and completed — shows everything the user has touched.
 
-`plans` and `subscriptions` as documented in V1. Untouched.
+## Subscriptions (V1.5 + Razorpay integration)
+
+### plans
+
+| Column | Type | Notes |
+|---|---|---|
+| code | TEXT UNIQUE NOT NULL | `monthly`, `annual`, etc. |
+| name | TEXT NOT NULL | display |
+| price_cents | INT NOT NULL | smallest currency unit (paise for INR) |
+| currency | TEXT NOT NULL DEFAULT 'INR' | ISO 4217 |
+| billing_interval | TEXT NOT NULL | `month` \| `year` |
+| is_active | BOOLEAN NOT NULL DEFAULT true | |
+| **provider_plan_id** | **TEXT NULL** | **Cached Razorpay Plan id (lazily created on first subscribe via Subscriptions mode). Skipped for Orders mode.** |
+
+### subscriptions
+
+| Column | Type | Notes |
+|---|---|---|
+| user_id | FK users | |
+| plan_id | FK plans | |
+| status | TEXT NOT NULL | `pending` \| `active` \| `past_due` \| `cancelled` \| `expired` |
+| current_period_start | TIMESTAMPTZ NOT NULL | |
+| current_period_end | TIMESTAMPTZ NOT NULL | Playback gating checks this; an `active`-status row whose period has passed is treated as expired. |
+| cancel_at_period_end | BOOLEAN NOT NULL DEFAULT false | |
+| provider | TEXT NOT NULL DEFAULT 'mock' | `mock` \| `razorpay` |
+| provider_subscription_id | TEXT NULL | For Razorpay Subscriptions mode: subscription id. For Razorpay Orders mode (default): order id (we reuse the column). |
+| **checkout_url** | **TEXT NULL** | **For pending subs, the URL the user should be redirected to complete checkout. Cleared once status='active'.** |
+
+Indexes: `(user_id, status)`, `current_period_end` (for expiry cron — Phase 2).
+
+## Webhook events (idempotency store)
+
+### webhook_events (new in QA pass)
+
+Used to short-circuit duplicate webhook deliveries from Razorpay. Append-only.
+
+| Column | Type | Notes |
+|---|---|---|
+| provider | TEXT NOT NULL | `razorpay` |
+| event_id | TEXT NOT NULL | Razorpay's `X-Razorpay-Event-Id` header value |
+| event_name | TEXT NULL | e.g. `payment.captured` |
+| outcome | TEXT NULL | first-time application outcome — surfaced on duplicates so caller can correlate |
+
+Unique constraint: `(provider, event_id)`. Index on `provider`.
+
+Webhook handler: signature-verify → reject if older than 10 min → lookup event_id → 200 with `outcome="duplicate"` if found → otherwise apply event + insert row.
 
 ## Audit log
 
@@ -264,8 +313,21 @@ titles ──< audio_tracks
 titles ──< subtitle_tracks
 titles ──< availability_windows
 titles ──< maturity_ratings
+
+webhook_events       (orphan; provider event-id store)
+audit_log            (orphan; append-only, references actor_user_id soft-link)
 ```
 
-## Migrations
+## Migrations (current chain)
 
-V1.5 introduces Alembic. The dev DB is dropped and recreated from migration `0001_initial`. Going forward, every schema change is a new migration; we never edit applied migrations.
+V1.5 introduces Alembic. Going forward, every schema change is a new migration; we never edit applied migrations.
+
+| Revision | Description |
+|---|---|
+| `213fa89dbc2b_initial_schema_v1_5` | Initial V1.5 schema — all 20 tables created at once |
+| `0da9a94663e8_razorpay_correlation_columns` | `plans.provider_plan_id`, `subscriptions.checkout_url` |
+| `67d9bd376b6d_webhook_events_table_for_idempotency` | New `webhook_events` table |
+| `117d9ec02783_watch_progress_hidden_from_continue` | `watch_progress.hidden_from_continue` |
+| `c599e9fb1787_is_free_flag_on_title_episode` | `titles.is_free`, `episodes.is_free` (with server_default backfill) |
+
+To apply against any environment: `cd backend && alembic upgrade head`.

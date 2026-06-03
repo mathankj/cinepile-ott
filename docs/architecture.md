@@ -1,7 +1,8 @@
-# Anjaneya OTT — Architecture (Phase 1: Backend V1)
+# Anjaneya OTT — Architecture (current: V1.5 + QA hardening)
 
-**Last updated:** 2026-06-02
+**Last updated:** 2026-06-03
 **Status:** Living document. Update on every meaningful change.
+**See also:** `CHANGELOG.md` (what shipped when), `docs/api/v1.md` (full endpoint contracts), `docs/db-schema.md` (tables + migrations).
 
 ---
 
