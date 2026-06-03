@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { playback, progress } from "../api";
 import VideoPlayer from "../components/player/VideoPlayer";
@@ -10,6 +10,13 @@ import VideoPlayer from "../components/player/VideoPlayer";
  * Routes:
  *   /watch/title/:id   → movie playback
  *   /watch/episode/:id → episode playback
+ *
+ * Cosmetic anti-capture: right-click block, no-download on the <video>, user-
+ * select disabled, and a "Protected content — playback paused" curtain that
+ * drops when the tab loses visibility (a real screen-recording trigger fires
+ * visibilitychange). NONE of this stops a determined attacker — true content
+ * protection requires DRM (Widevine/PlayReady/FairPlay + license server). See
+ * docs/decisions/ for the DRM ADR placeholder before production launch.
  */
 export default function Watch() {
   const { kind, id } = useParams();
@@ -69,7 +76,7 @@ export default function Watch() {
   }
 
   return (
-    <div className="bg-black min-h-screen">
+    <WatchSurface>
       <button
         type="button"
         onClick={() => nav(-1)}
@@ -82,6 +89,51 @@ export default function Watch() {
         resumeAtSec={ticket.resume_at_sec}
         onProgress={handleProgress}
       />
+    </WatchSurface>
+  );
+}
+
+/**
+ * Wrapper around the player that applies the cosmetic capture defences.
+ * Lives in this file (not the player) because the curtain belongs to the page,
+ * not the embed. The player itself stays reusable for trailers / previews.
+ */
+function WatchSurface({ children }: { children: React.ReactNode }) {
+  const [hidden, setHidden] = useState(false);
+
+  useEffect(() => {
+    function onVisibility() {
+      // When the tab is hidden (alt-tab, screen recorder grabbing a region in
+      // background) we drop a curtain. Re-shows on focus return.
+      setHidden(document.visibilityState !== "visible");
+    }
+    function onContext(e: MouseEvent) {
+      // Block right-click menu so "Save video as..." doesn't appear. Cosmetic
+      // only — devtools still works.
+      e.preventDefault();
+    }
+    document.addEventListener("visibilitychange", onVisibility);
+    document.addEventListener("contextmenu", onContext);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      document.removeEventListener("contextmenu", onContext);
+    };
+  }, []);
+
+  return (
+    <div
+      className="relative min-h-screen bg-black select-none"
+      style={{ WebkitUserSelect: "none", userSelect: "none" }}
+    >
+      {children}
+      {hidden && (
+        <div className="fixed inset-0 z-[100] grid place-items-center bg-black text-white animate-fade-in">
+          <div className="text-center">
+            <div className="text-lg font-semibold">Protected content</div>
+            <div className="mt-2 text-sm text-white/60">Playback paused while this window is not visible.</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
