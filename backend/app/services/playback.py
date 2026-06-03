@@ -53,6 +53,48 @@ def _build_token(user_id: int, ref_type: str, ref_id: int, url: str, expires_at:
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
+def _build_drm_config(user_id: int, ref_type: str, ref_id: int) -> dict | None:
+    """Builds the DRM block on a playback ticket.
+
+    Returns None when DRM is not configured (the dev/no-DRM path). When
+    configured, mints a short-lived license-request token signed with
+    DRM_TOKEN_SECRET so the license server can verify the request server-
+    side before issuing decryption keys. The token carries the entitlement
+    decision (user_id, content_id) — the license server doesn't need to
+    re-check subscription state.
+    """
+    settings = get_settings()
+    if not settings.drm_configured():
+        return None
+
+    # Sign the request token. License servers (EZDRM / BuyDRM / Axinom)
+    # accept this in the Authorization or X-DRM-Token header and validate
+    # signature + claims before issuing keys. drm_token_secret is provider-
+    # supplied (NOT our jwt_secret) so a key compromise on one system doesn't
+    # cascade to the other.
+    secret = settings.drm_token_secret or settings.jwt_secret
+    drm_token_exp = datetime.now(tz=timezone.utc) + timedelta(seconds=settings.drm_token_ttl_seconds)
+    drm_token = jwt.encode(
+        {
+            "sub": str(user_id),
+            "content_id": f"{ref_type}:{ref_id}",
+            "exp": drm_token_exp,
+            "type": "drm-license-request",
+            "provider": settings.drm_provider,
+        },
+        secret,
+        algorithm=settings.jwt_algorithm,
+    )
+
+    return {
+        "widevine_license_url": settings.drm_widevine_license_url,
+        "playready_license_url": settings.drm_playready_license_url,
+        "fairplay_license_url": settings.drm_fairplay_license_url,
+        "fairplay_cert_url": settings.drm_fairplay_cert_url,
+        "playback_token": drm_token,
+    }
+
+
 async def _ensure_entitled(
     db: AsyncSession, user: User, *, title: Title | None = None, episode: Episode | None = None
 ) -> None:
@@ -117,6 +159,7 @@ async def issue_movie_ticket(db: AsyncSession, user: User, title: Title) -> dict
         "ref_type": "title",
         "resume_at_sec": resume_at,
         "total_sec": total_sec,
+        "drm": _build_drm_config(user.id, "title", title.id),
     }
 
 
@@ -150,4 +193,5 @@ async def issue_episode_ticket(db: AsyncSession, user: User, episode: Episode) -
         "ref_type": "episode",
         "resume_at_sec": resume_at,
         "total_sec": total_sec,
+        "drm": _build_drm_config(user.id, "episode", episode.id),
     }

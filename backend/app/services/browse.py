@@ -24,6 +24,7 @@ from sqlalchemy import String, and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.genre import Genre
+from app.models.reaction import Reaction
 from app.models.title import Title, titles_genres
 from app.models.user import User
 from app.models.watchlist import WatchlistItem
@@ -132,6 +133,83 @@ async def _titles_by_genre(
     return list((await db.scalars(stmt)).unique().all())
 
 
+async def recommended_for_you(
+    db: AsyncSession, user: User, *, limit: int = ROW_DEFAULT_CAP
+) -> list[Title]:
+    """Lightweight recommendations.
+
+    Seeds (in priority order):
+      1. Titles the user thumbed UP via reactions
+      2. Titles the user added to their watchlist
+      3. Titles the user has any watch progress on (finished or in-flight)
+
+    For each seed we pull the genre IDs and find titles sharing genre, excluding
+    the seeds themselves. Order: view_count desc, then id desc as a tiebreaker.
+
+    Returns [] for users with NO seeds — caller decides whether to fall back
+    to globally popular content. This deliberately under-reports rather than
+    hallucinate a recommendation when we have nothing to base it on.
+    """
+    # Collect seed title IDs from reactions (up=like), watchlist, watch_progress
+    liked_ids = list(
+        (
+            await db.scalars(
+                select(Reaction.title_id).where(
+                    Reaction.user_id == user.id, Reaction.kind == "like"
+                )
+            )
+        ).all()
+    )
+    list_ids = list(
+        (
+            await db.scalars(
+                select(WatchlistItem.title_id).where(WatchlistItem.user_id == user.id)
+            )
+        ).all()
+    )
+    progress_ids = list(
+        (
+            await db.scalars(
+                select(WatchProgress.title_id)
+                .where(WatchProgress.user_id == user.id)
+                .order_by(WatchProgress.updated_at.desc())
+                .limit(10)
+            )
+        ).all()
+    )
+    seed_ids = {*liked_ids, *list_ids, *progress_ids}
+    if not seed_ids:
+        return []
+
+    # Genres of all seed titles
+    genre_ids = list(
+        (
+            await db.scalars(
+                select(titles_genres.c.genre_id)
+                .where(titles_genres.c.title_id.in_(seed_ids))
+                .distinct()
+            )
+        ).all()
+    )
+    if not genre_ids:
+        return []
+
+    # Titles sharing a genre, excluding seeds themselves. The distinct() avoids
+    # the same title appearing twice when it matches two seed genres.
+    stmt = (
+        select(Title)
+        .join(titles_genres, titles_genres.c.title_id == Title.id)
+        .where(
+            _published_filter(),
+            titles_genres.c.genre_id.in_(genre_ids),
+            Title.id.notin_(seed_ids),
+        )
+        .order_by(Title.view_count.desc(), Title.id.desc())
+        .limit(limit)
+    )
+    return list((await db.scalars(stmt)).unique().all())
+
+
 async def _my_list_titles(db: AsyncSession, user: User, *, limit: int = 50) -> list[Title]:
     stmt = (
         select(Title)
@@ -166,6 +244,13 @@ async def build_home(
         my_list_items = await _my_list_titles(db, user)
         if my_list_items:
             rows.append({"kind": "my_list", "title": "My List", "items": my_list_items})
+
+        # Recommendations row — fires whenever the user has ANY signal (reaction,
+        # watchlist, progress). Stronger than "Because you watched" because it
+        # doesn't require a FINISHED watch.
+        recs = await recommended_for_you(db, user)
+        if recs:
+            rows.append({"kind": "recommended", "title": "Recommended for You", "items": recs})
 
     rows.append({"kind": "new_releases", "title": "New Releases", "items": await _new_releases(db)})
     rows.append({"kind": "trending_now", "title": "Trending Now", "items": await _trending(db)})

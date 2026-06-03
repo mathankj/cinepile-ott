@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { Search, Bell, ChevronDown, Menu, X } from "lucide-react";
 import { useAuthStore } from "../../stores/auth";
+import { useProfileStore } from "../../stores/profile";
 
 /**
  * Top navigation — transparent over hero, fades to solid #141414 on scroll > 60px.
@@ -190,23 +191,49 @@ function ProfileMenu({
 }) {
   const [open, setOpen] = useState(false);
   const nav = useNavigate();
+  const activeProfile = useProfileStore((s) => s.active);
+  const clearProfile = useProfileStore((s) => s.clear);
   if (!user) return null;
-  const initial = (user.full_name || user.email).slice(0, 1).toUpperCase();
+  const fallbackInitial = (user.full_name || user.email).slice(0, 1).toUpperCase();
   return (
     <div className="relative">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-2"
+        aria-label="Account menu"
       >
-        <span className="grid h-8 w-8 place-items-center rounded bg-[var(--color-bg-surface)] text-sm font-bold text-white">
-          {initial}
+        <span className="grid h-8 w-8 place-items-center rounded bg-[var(--color-bg-surface)] text-base font-bold text-white">
+          {activeProfile?.avatar ?? fallbackInitial}
         </span>
         <ChevronDown size={14} className="text-white/70" />
       </button>
       {open && (
-        <div className="absolute right-0 mt-2 w-56 rounded bg-black/90 backdrop-blur-md border border-white/10 py-2 text-sm animate-slide-up">
-          <div className="px-3 py-2 text-xs text-white/60">{user.email}</div>
+        <div className="absolute right-0 mt-2 w-60 rounded bg-black/90 backdrop-blur-md border border-white/10 py-2 text-sm animate-slide-up">
+          {activeProfile && (
+            <div className="px-3 py-2 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <span className="grid h-8 w-8 place-items-center rounded bg-[var(--color-bg-surface)] text-base">
+                  {activeProfile.avatar}
+                </span>
+                <div>
+                  <div className="font-medium text-white">{activeProfile.name}</div>
+                  <div className="text-[11px] text-white/60">{user.email}</div>
+                </div>
+              </div>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              clearProfile();
+              setOpen(false);
+              nav("/profiles");
+            }}
+            className="block w-full px-3 py-2 text-left hover:bg-white/5"
+          >
+            Switch profile
+          </button>
           <Link
             to="/me/list"
             onClick={() => setOpen(false)}

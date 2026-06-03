@@ -104,6 +104,28 @@ export type TitleListResponse = {
   total: number;
 };
 
+export type Profile = {
+  id: number;
+  name: string;
+  avatar: string;
+  kind: "adult" | "kid";
+  is_primary: boolean;
+  created_at: string;
+};
+
+export type ProfileList = {
+  items: Profile[];
+  max_profiles: number;
+};
+
+export type DrmConfig = {
+  widevine_license_url: string | null;
+  playready_license_url: string | null;
+  fairplay_license_url: string | null;
+  fairplay_cert_url: string | null;
+  playback_token: string | null;
+};
+
 export type PlaybackTicket = {
   manifest_url: string;
   token: string;
@@ -112,6 +134,7 @@ export type PlaybackTicket = {
   ref_id: number;
   resume_at_sec: number | null;
   total_sec: number | null;
+  drm: DrmConfig | null;
 };
 
 export type HomeRow = {

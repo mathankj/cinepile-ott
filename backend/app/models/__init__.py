@@ -8,6 +8,7 @@ from app.models.episode import Episode, EpisodeAsset
 from app.models.genre import Genre
 from app.models.language import AudioTrack, SubtitleTrack
 from app.models.person import Person, TitleCredit
+from app.models.profile import Profile
 from app.models.reaction import Reaction
 from app.models.refresh_token import RefreshToken
 from app.models.season import Season
@@ -28,6 +29,7 @@ __all__ = [
     "MaturityRating",
     "Person",
     "Plan",
+    "Profile",
     "Reaction",
     "RefreshToken",
     "Season",

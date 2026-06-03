@@ -79,6 +79,31 @@ class Settings(BaseSettings):
     # Default presigned-URL TTL in seconds (4h covers a full feature film comfortably)
     storage_presigned_ttl_seconds: int = 14400
 
+    # ---- DRM (Widevine / PlayReady / FairPlay) ----
+    # When ANY of these are set, the playback ticket carries the license-server
+    # URL + auth token for the corresponding key system. Player picks the one
+    # matching the user's browser (EME: navigator.requestMediaKeySystemAccess).
+    # See docs/decisions/0003-drm.md for provider integration guides.
+    drm_widevine_license_url: str | None = None     # Chrome / Edge / Android
+    drm_playready_license_url: str | None = None    # Edge / Windows
+    drm_fairplay_license_url: str | None = None     # Safari / iOS / tvOS
+    drm_fairplay_cert_url: str | None = None        # FairPlay needs an extra app-cert URL
+    drm_provider: Literal["none", "ezdrm", "buydrm", "axinom", "verimatrix", "self"] = "none"
+    # Optional shared secret used to sign per-playback license-request tokens.
+    # If set, backend mints a short-lived JWT alongside each playback ticket
+    # that the license server verifies before issuing a key.
+    drm_token_secret: str | None = None
+    drm_token_ttl_seconds: int = 60 * 60  # 1h — license requests happen at play start
+
+    def drm_configured(self) -> bool:
+        return any(
+            [
+                self.drm_widevine_license_url,
+                self.drm_playready_license_url,
+                self.drm_fairplay_license_url,
+            ]
+        )
+
     def storage_configured(self) -> bool:
         return all(
             [

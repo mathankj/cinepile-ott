@@ -11,13 +11,13 @@
 import { expect, type Page } from "@playwright/test";
 
 export const ACCOUNTS = {
-  admin: { email: "admin@anjaneya.app", password: "admin1234" },
-  contentManager: { email: "cm@anjaneya.app", password: "cm123456" },
-  user: { email: "user@anjaneya.app", password: "user1234" },
+  admin: { email: "admin@anjaneya.app", password: "admin1234", profileName: "Local Admin" },
+  contentManager: { email: "cm@anjaneya.app", password: "cm123456", profileName: "Content Manager" },
+  user: { email: "user@anjaneya.app", password: "user1234", profileName: "Regular User" },
 } as const;
 
 export async function loginAs(page: Page, who: keyof typeof ACCOUNTS) {
-  const { email, password } = ACCOUNTS[who];
+  const { email, password, profileName } = ACCOUNTS[who];
   await page.goto("/login");
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
@@ -26,6 +26,24 @@ export async function loginAs(page: Page, who: keyof typeof ACCOUNTS) {
   // Under parallel-worker load the exact-URL wait can race the JS that flips
   // the URL bar — accept any non-/login URL as "logged in".
   await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 20_000 });
+
+  // ProfileGate redirects authed users without a selected profile to /profiles,
+  // but the redirect fires AFTER Zustand persist finishes hydrating (one tick
+  // post-mount). So Home can render briefly first; we mustn't take that brief
+  // render as "logged-in and done". Wait specifically for the picker to land,
+  // up to 8s — if it doesn't, assume the user already had a persisted profile
+  // and we're on Home for real.
+  const pickerHeading = page.locator("h1", { hasText: "Who's watching?" });
+  await pickerHeading.waitFor({ timeout: 8_000 }).catch(() => null);
+
+  if (await pickerHeading.isVisible().catch(() => false)) {
+    // Wait for the profile button to render — the GET /v1/me/profiles call
+    // can take several seconds on a cold Neon connection.
+    const profileBtn = page.locator(`button:has-text("${profileName}")`).first();
+    await profileBtn.waitFor({ timeout: 20_000 });
+    await profileBtn.click();
+    await page.waitForURL((url) => !url.pathname.startsWith("/profiles"), { timeout: 10_000 });
+  }
 }
 
 /**

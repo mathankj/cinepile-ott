@@ -11,6 +11,8 @@ import type {
   HomeRow,
   Plan,
   PlaybackTicket,
+  Profile,
+  ProfileList,
   ReactionKind,
   ReactionRead,
   SeasonDetail,
@@ -137,6 +139,20 @@ export const me = {
 
   listWatchlist: () =>
     api.get<{ items: WatchlistItemRead[] }>("/v1/me/list").then((r) => r.data),
+
+  // ---------- Recommendations ----------
+  recommendations: () =>
+    api.get<TitleSummary[]>("/v1/me/recommendations").then((r) => r.data),
+
+  // ---------- Profiles ("Who's watching?") ----------
+  listProfiles: () => api.get<ProfileList>("/v1/me/profiles").then((r) => r.data),
+  createProfile: (body: { name: string; avatar?: string; kind?: "adult" | "kid" }) =>
+    api.post<Profile>("/v1/me/profiles", body).then((r) => r.data),
+  updateProfile: (
+    id: number,
+    body: { name?: string; avatar?: string; kind?: "adult" | "kid" },
+  ) => api.patch<Profile>(`/v1/me/profiles/${id}`, body).then((r) => r.data),
+  deleteProfile: (id: number) => api.delete(`/v1/me/profiles/${id}`),
 };
 
 // ---------- Home rows ----------

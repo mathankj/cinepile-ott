@@ -7,6 +7,7 @@ from app.api.deps import CurrentUser, DbSession
 from app.schemas.token import AuthSuccess, RefreshRequest, TokenPair
 from app.schemas.user import UserLogin, UserRead, UserSignup
 from app.services import auth as auth_svc
+from app.services import profile as profile_svc
 
 router = APIRouter()
 
@@ -29,6 +30,11 @@ async def signup(payload: UserSignup, db: DbSession) -> AuthSuccess:
         )
     except auth_svc.EmailAlreadyRegistered as e:
         raise _err(e, status.HTTP_409_CONFLICT) from e
+
+    # Spin up the primary profile right away so /v1/me/profiles is never empty.
+    # The picker UI expects at least one row to land on after signup.
+    await profile_svc.ensure_primary_profile(db, user.id, default_name=payload.full_name)
+    await db.commit()
 
     return AuthSuccess(
         tokens=TokenPair(access_token=access, refresh_token=refresh, expires_at=exp),

@@ -32,6 +32,7 @@ from app.db.base import Base, get_engine, get_session_factory  # noqa: E402
 from app.models.episode import Episode, EpisodeAsset  # noqa: E402
 from app.models.genre import Genre  # noqa: E402
 from app.models.language import AudioTrack, SubtitleTrack  # noqa: E402
+from app.models.profile import Profile  # noqa: E402
 from app.models.reaction import Reaction  # noqa: E402
 from app.models.season import Season  # noqa: E402
 from app.models.subscription import Plan  # noqa: E402
@@ -418,6 +419,22 @@ async def _ensure_user(s, email, password, role, full_name):
         user.password_hash = hash_password(password)
         user.role = role
         user.full_name = full_name
+        await s.flush()
+    # Ensure a primary profile exists. We backfill so users that pre-date the
+    # profiles feature still get one.
+    existing_profile = await s.scalar(
+        select(Profile).where(Profile.user_id == user.id, Profile.is_primary.is_(True))
+    )
+    if existing_profile is None:
+        s.add(
+            Profile(
+                user_id=user.id,
+                name=(full_name or email.split("@")[0])[:32],
+                avatar="👤",
+                kind="adult",
+                is_primary=True,
+            )
+        )
         await s.flush()
     return user
 

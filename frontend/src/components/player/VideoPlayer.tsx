@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Hls, { type Level, type MediaPlaylist } from "hls.js";
 import { Settings, Check } from "lucide-react";
+import type { DrmConfig } from "../../api/types";
 
 /**
  * HLS video player.
@@ -10,6 +11,8 @@ import { Settings, Check } from "lucide-react";
  * - resumeAtSec: where to seek on play start
  * - onProgress: (positionSec, totalSec) — fires every ~10s while playing
  * - introStart/intoEnd: optional skip-intro markers
+ * - drm: optional DRM config (Widevine/PlayReady/FairPlay). When present,
+ *        hls.js is initialised with emeEnabled + the matching license URL.
  *
  * Netflix-style settings gear: opens a panel over the player that exposes
  * hls.js's level (quality), audioTracks, and subtitleTracks selectors. The
@@ -24,6 +27,7 @@ type Props = {
   onProgress?: (positionSec: number, totalSec: number) => void;
   onEnded?: () => void;
   autoPlay?: boolean;
+  drm?: DrmConfig | null;
 };
 
 type QualityOption = { label: string; index: number }; // -1 = Auto
@@ -36,6 +40,7 @@ export default function VideoPlayer({
   onProgress,
   onEnded,
   autoPlay = true,
+  drm,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -59,9 +64,43 @@ export default function VideoPlayer({
     const isHls = src.includes(".m3u8");
 
     if (isHls && Hls.isSupported()) {
+      // hls.js EME — only enabled when the backend sent a license URL.
+      // The browser picks Widevine on Chrome/Edge/Android; PlayReady on
+      // Edge/Windows; FairPlay on Safari/iOS. We pass all configs we have
+      // and let hls.js negotiate via navigator.requestMediaKeySystemAccess.
+      const useDrm = !!(drm && (drm.widevine_license_url || drm.playready_license_url));
       hls = new Hls({
         maxBufferLength: 30,
         maxMaxBufferLength: 60,
+        ...(useDrm
+          ? {
+              emeEnabled: true,
+              drmSystems: {
+                ...(drm!.widevine_license_url && {
+                  "com.widevine.alpha": {
+                    licenseUrl: drm!.widevine_license_url,
+                    // License-request headers: send the playback token so the
+                    // license server can verify entitlement before issuing keys.
+                    ...(drm!.playback_token && {
+                      licenseRequestHeaders: {
+                        "X-DRM-Token": drm!.playback_token,
+                      },
+                    }),
+                  },
+                }),
+                ...(drm!.playready_license_url && {
+                  "com.microsoft.playready": {
+                    licenseUrl: drm!.playready_license_url,
+                    ...(drm!.playback_token && {
+                      licenseRequestHeaders: {
+                        "X-DRM-Token": drm!.playback_token,
+                      },
+                    }),
+                  },
+                }),
+              },
+            }
+          : {}),
       });
       hlsRef.current = hls;
 
@@ -108,7 +147,9 @@ export default function VideoPlayer({
       hls?.destroy();
       hlsRef.current = null;
     };
-  }, [src]);
+    // The drm config is part of the ticket so it changes per-source. If it
+    // moves, we need to re-init hls.js with the new key-system settings.
+  }, [src, drm]);
 
   // Resume on metadata load
   useEffect(() => {

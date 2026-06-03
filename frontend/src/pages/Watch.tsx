@@ -88,6 +88,7 @@ export default function Watch() {
         src={ticket.manifest_url}
         resumeAtSec={ticket.resume_at_sec}
         onProgress={handleProgress}
+        drm={ticket.drm}
       />
     </WatchSurface>
   );

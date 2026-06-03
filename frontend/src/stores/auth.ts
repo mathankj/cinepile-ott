@@ -39,7 +39,16 @@ export const useAuthStore = create<AuthState>()(
       setUser: (u) => set({ user: u }),
       setAuth: (access, refresh, u) =>
         set({ accessToken: access, refreshToken: refresh, user: u }),
-      clear: () => set({ accessToken: null, refreshToken: null, user: null }),
+      clear: () => {
+        set({ accessToken: null, refreshToken: null, user: null });
+        // Clear the persisted profile too so the next login starts at the
+        // picker rather than ghost-resuming the previous user's profile.
+        try {
+          localStorage.removeItem("anjaneya-profile");
+        } catch {
+          // localStorage may be unavailable in some test envs — best effort.
+        }
+      },
       isLoggedIn: () => !!get().accessToken,
       hasRole: (...roles) => {
         const r = get().user?.role;

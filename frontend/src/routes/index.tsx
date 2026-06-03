@@ -1,7 +1,9 @@
-import { lazy, Suspense } from "react";
-import { createBrowserRouter, RouterProvider } from "react-router-dom";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { createBrowserRouter, Navigate, RouterProvider, useLocation } from "react-router-dom";
 import AppLayout from "../components/layout/AppLayout";
 import ProtectedRoute from "../components/ProtectedRoute";
+import { useAuthStore } from "../stores/auth";
+import { useProfileStore } from "../stores/profile";
 
 /**
  * Route-level code-splitting via React.lazy().
@@ -24,6 +26,7 @@ const History = lazy(() => import("../pages/History"));
 const Login = lazy(() => import("../pages/Login"));
 const Signup = lazy(() => import("../pages/Signup"));
 const Subscribe = lazy(() => import("../pages/Subscribe"));
+const ProfilesPage = lazy(() => import("../pages/Profiles"));
 
 // Admin pages are also lazy-loaded — they only ever load when an admin actually
 // navigates to /admin, which is rare for regular users. Big win for general traffic.
@@ -57,13 +60,63 @@ function lazyRoute(Component: React.LazyExoticComponent<React.ComponentType>) {
   );
 }
 
+/**
+ * Wraps a route so that authed users without an active profile are bounced to
+ * /profiles first. Anonymous users pass through (they hit the existing
+ * ProtectedRoute / login redirect). Once a profile is picked, the active row
+ * lives in the profile store and this gate becomes a no-op.
+ *
+ * Hydration race: Zustand v5's persist middleware rehydrates from localStorage
+ * asynchronously. On the first render after a hard reload (page.goto in tests,
+ * F5 in browser), `active` is null even when localStorage has a saved profile.
+ * If we redirected then, the URL would briefly flip to /profiles and the user
+ * would have to re-pick. We use `persist.hasHydrated()` to defer the redirect
+ * decision until the store has loaded its persisted state.
+ */
+function ProfileGate({ children }: { children: React.ReactNode }) {
+  const loc = useLocation();
+  const isLoggedIn = useAuthStore((s) => !!s.accessToken);
+  const active = useProfileStore((s) => s.active);
+  // `hasHydrated()` is not reactive — subscribe to onFinishHydration to flip
+  // local state when it completes. Without this, a logged-in user who genuinely
+  // has no selected profile would never get redirected to /profiles on hard
+  // reload (because the gate's first render sees hydrated=false and stays put,
+  // and never re-renders since `active` doesn't change from its initial null).
+  const [hydrated, setHydrated] = useState(() => useProfileStore.persist.hasHydrated());
+  useEffect(() => {
+    if (hydrated) return;
+    const unsub = useProfileStore.persist.onFinishHydration(() => setHydrated(true));
+    return unsub;
+  }, [hydrated]);
+
+  // Don't gate the picker itself, and don't gate auth pages.
+  const exempt =
+    loc.pathname === "/profiles" ||
+    loc.pathname === "/login" ||
+    loc.pathname === "/signup";
+  if (hydrated && isLoggedIn && !active && !exempt) {
+    return <Navigate to="/profiles" replace />;
+  }
+  return <>{children}</>;
+}
+
 export const router = createBrowserRouter([
   // Auth routes — rendered WITHOUT AppLayout so the Netflix-style full-bleed
   // hero card has no navbar/footer chrome around it.
   { path: "/login", element: lazyRoute(Login) },
   { path: "/signup", element: lazyRoute(Signup) },
+  // Profile picker — protected, but also lives outside AppLayout (Netflix has
+  // no nav on "Who's watching?").
   {
-    element: <AppLayout />,
+    path: "/profiles",
+    element: <ProtectedRoute>{lazyRoute(ProfilesPage)}</ProtectedRoute>,
+  },
+  {
+    element: (
+      <ProfileGate>
+        <AppLayout />
+      </ProfileGate>
+    ),
     children: [
       { path: "/", element: lazyRoute(Home) },
       { path: "/browse", element: lazyRoute(Browse) },

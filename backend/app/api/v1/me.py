@@ -7,6 +7,12 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.deps import CurrentUser, DbSession
+from app.schemas.profile import (
+    ProfileCreate,
+    ProfileList,
+    ProfileRead,
+    ProfileUpdate,
+)
 from app.schemas.reaction import (
     ContinueWatchingItem,
     ContinueWatchingList,
@@ -20,7 +26,9 @@ from app.schemas.reaction import (
     WatchlistRead,
 )
 from app.schemas.title import TitleSummary
+from app.services import browse as browse_svc
 from app.services import history as history_svc
+from app.services import profile as profile_svc
 from app.services import reactions as reaction_svc
 from app.services import watchlist as watchlist_svc
 
@@ -217,3 +225,81 @@ async def list_watchlist(db: DbSession, user: CurrentUser) -> WatchlistRead:
             for w, t in items
         ]
     )
+
+
+# ---- Recommendations ----------------------------------------------------------
+
+
+@router.get("/me/recommendations", response_model=list[TitleSummary], tags=["recommendations"])
+async def my_recommendations(db: DbSession, user: CurrentUser) -> list[TitleSummary]:
+    """Recommendation row independent of /v1/home.
+
+    Same source as the 'Recommended for You' row on home — seeded by reactions,
+    watchlist, and watch progress. Returns an empty list for users with no
+    signal yet.
+    """
+    titles = await browse_svc.recommended_for_you(db, user)
+    return [TitleSummary.model_validate(t) for t in titles]
+
+
+# ---- Profiles ("Who's watching?") --------------------------------------------
+
+
+@router.get("/me/profiles", response_model=ProfileList, tags=["profiles"])
+async def list_profiles_endpoint(db: DbSession, user: CurrentUser) -> ProfileList:
+    """List the user's profiles. Auto-creates the primary on first call so
+    pre-profiles accounts always see at least one row."""
+    profiles = await profile_svc.list_profiles(db, user.id)
+    if not profiles:
+        await profile_svc.ensure_primary_profile(db, user.id, default_name=user.full_name)
+        await db.commit()
+        profiles = await profile_svc.list_profiles(db, user.id)
+    return ProfileList(
+        items=[ProfileRead.model_validate(p) for p in profiles],
+        max_profiles=profile_svc.MAX_PROFILES_PER_USER,
+    )
+
+
+@router.post("/me/profiles", response_model=ProfileRead, status_code=status.HTTP_201_CREATED, tags=["profiles"])
+async def create_profile_endpoint(
+    body: ProfileCreate, db: DbSession, user: CurrentUser
+) -> ProfileRead:
+    try:
+        profile = await profile_svc.create_profile(
+            db, user.id, name=body.name, avatar=body.avatar, kind=body.kind
+        )
+    except profile_svc.ProfileLimitReached as exc:
+        raise _err(exc, status.HTTP_409_CONFLICT) from exc
+    except profile_svc.DuplicateName as exc:
+        raise _err(exc, status.HTTP_409_CONFLICT) from exc
+    await db.commit()
+    return ProfileRead.model_validate(profile)
+
+
+@router.patch("/me/profiles/{profile_id}", response_model=ProfileRead, tags=["profiles"])
+async def update_profile_endpoint(
+    profile_id: int, body: ProfileUpdate, db: DbSession, user: CurrentUser
+) -> ProfileRead:
+    try:
+        profile = await profile_svc.update_profile(
+            db, user.id, profile_id, name=body.name, avatar=body.avatar, kind=body.kind
+        )
+    except profile_svc.ProfileNotFound as exc:
+        raise _err(exc, status.HTTP_404_NOT_FOUND) from exc
+    except profile_svc.DuplicateName as exc:
+        raise _err(exc, status.HTTP_409_CONFLICT) from exc
+    await db.commit()
+    return ProfileRead.model_validate(profile)
+
+
+@router.delete("/me/profiles/{profile_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["profiles"])
+async def delete_profile_endpoint(
+    profile_id: int, db: DbSession, user: CurrentUser
+) -> None:
+    try:
+        await profile_svc.delete_profile(db, user.id, profile_id)
+    except profile_svc.ProfileNotFound as exc:
+        raise _err(exc, status.HTTP_404_NOT_FOUND) from exc
+    except profile_svc.CannotDeletePrimary as exc:
+        raise _err(exc, status.HTTP_409_CONFLICT) from exc
+    await db.commit()
