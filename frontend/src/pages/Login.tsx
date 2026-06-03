@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { auth } from "../api";
 import { apiErrorMessage } from "../api/client";
 import { useAuthStore } from "../stores/auth";
@@ -9,6 +10,7 @@ export default function Login() {
   const nav = useNavigate();
   const loc = useLocation();
   const setAuth = useAuthStore((s) => s.setAuth);
+  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
@@ -26,7 +28,7 @@ export default function Login() {
       setAuth(res.tokens.access_token, res.tokens.refresh_token, res.user);
       nav(redirect, { replace: true });
     } catch (e) {
-      setErr(apiErrorMessage(e, "Email or password is incorrect."));
+      setErr(apiErrorMessage(e, t("auth.wrong_credentials")));
     } finally {
       setBusy(false);
     }
@@ -34,12 +36,12 @@ export default function Login() {
 
   return (
     <AuthShell
-      title="Sign In"
+      title={t("auth.sign_in_title")}
       footer={
         <span>
-          New to Anjaneya?{" "}
+          {t("auth.new_to_brand")}{" "}
           <Link to="/signup" className="text-white hover:underline">
-            Sign up now
+            {t("auth.sign_up_now")}
           </Link>
           .
         </span>
@@ -49,7 +51,7 @@ export default function Login() {
         <FloatingField
           id="login-email"
           type="email"
-          label="Email"
+          label={t("auth.email")}
           autoComplete="email"
           value={email}
           onChange={setEmail}
@@ -58,7 +60,7 @@ export default function Login() {
         <FloatingField
           id="login-password"
           type="password"
-          label="Password"
+          label={t("auth.password")}
           autoComplete="current-password"
           value={password}
           onChange={setPassword}
@@ -78,7 +80,7 @@ export default function Login() {
           disabled={busy}
           className="mt-2 w-full rounded bg-[var(--color-brand)] py-3 text-base font-semibold text-white transition-colors hover:bg-[var(--color-brand-hover)] active:bg-[var(--color-brand-dark)] disabled:opacity-60"
         >
-          {busy ? "Signing in…" : "Sign In"}
+          {busy ? t("auth.signing_in") : t("auth.sign_in_cta")}
         </button>
         <div className="mt-3 flex items-center justify-between text-sm text-white/70">
           <label className="flex items-center gap-2 cursor-pointer">
@@ -88,10 +90,10 @@ export default function Login() {
               onChange={(e) => setRemember(e.target.checked)}
               className="h-4 w-4 accent-white"
             />
-            Remember me
+            {t("auth.remember_me")}
           </label>
           <Link to="/login" className="hover:underline">
-            Need help?
+            {t("auth.need_help")}
           </Link>
         </div>
       </form>

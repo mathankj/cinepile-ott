@@ -14,8 +14,11 @@ from jose import jwt
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import select
+
 from app.core.config import get_settings
 from app.models.episode import Episode
+from app.models.language import SubtitleTrack
 from app.models.season import Season
 from app.models.title import Title
 from app.models.user import User
@@ -51,6 +54,44 @@ def _build_token(user_id: int, ref_type: str, ref_id: int, url: str, expires_at:
         "url": url,
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+async def _list_subtitles(
+    db: AsyncSession, *, title_id: int | None, episode_id: int | None
+) -> list[dict]:
+    """Returns the subtitle list ready to embed in the playback ticket.
+
+    Only tracks with a non-null storage_url are returned (older seed rows had
+    metadata-only entries with no actual .vtt file — those are invisible to the
+    player). Each URL is resolved through storage_svc so private buckets get a
+    presigned link.
+    """
+    if title_id is not None:
+        rows = await db.scalars(
+            select(SubtitleTrack).where(
+                SubtitleTrack.title_id == title_id,
+                SubtitleTrack.storage_url.is_not(None),
+            )
+        )
+    else:
+        rows = await db.scalars(
+            select(SubtitleTrack).where(
+                SubtitleTrack.episode_id == episode_id,
+                SubtitleTrack.storage_url.is_not(None),
+            )
+        )
+    out: list[dict] = []
+    for r in rows.all():
+        out.append(
+            {
+                "language": r.language,
+                "label": r.label or r.language.upper(),
+                "kind": r.kind,
+                "url": storage_svc.resolve_url(r.storage_url),  # type: ignore[arg-type]
+                "forced": r.forced,
+            }
+        )
+    return out
 
 
 def _build_drm_config(user_id: int, ref_type: str, ref_id: int) -> dict | None:
@@ -159,6 +200,7 @@ async def issue_movie_ticket(db: AsyncSession, user: User, title: Title) -> dict
         "ref_type": "title",
         "resume_at_sec": resume_at,
         "total_sec": total_sec,
+        "subtitles": await _list_subtitles(db, title_id=title.id, episode_id=None),
         "drm": _build_drm_config(user.id, "title", title.id),
     }
 
@@ -193,5 +235,6 @@ async def issue_episode_ticket(db: AsyncSession, user: User, episode: Episode) -
         "ref_type": "episode",
         "resume_at_sec": resume_at,
         "total_sec": total_sec,
+        "subtitles": await _list_subtitles(db, title_id=None, episode_id=episode.id),
         "drm": _build_drm_config(user.id, "episode", episode.id),
     }

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Play, Info } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { TitleSummary } from "../../api/types";
 
 /**
@@ -19,6 +20,7 @@ import type { TitleSummary } from "../../api/types";
  */
 export function Billboard({ title }: { title: TitleSummary | null }) {
   const [imgFailed, setImgFailed] = useState(false);
+  const { t } = useTranslation();
   if (!title) return null;
   const imgUrl = title.backdrop_url || title.poster_url;
   const showImage = imgUrl && !imgFailed;
@@ -90,7 +92,7 @@ export function Billboard({ title }: { title: TitleSummary | null }) {
           </span>
           {title.is_free && (
             <span className="rounded bg-[var(--color-brand)] px-2 py-0.5 text-xs font-bold tracking-wider text-white">
-              FREE
+              {t("billboard.free")}
             </span>
           )}
         </motion.div>
@@ -99,13 +101,13 @@ export function Billboard({ title }: { title: TitleSummary | null }) {
             to={title.type === "series" ? `/title/${title.id}` : `/watch/title/${title.id}`}
             className="group/btn inline-flex items-center gap-2 rounded bg-white px-7 py-3 text-base font-semibold text-black transition-all duration-200 hover:bg-white/85 active:scale-[0.98]"
           >
-            <Play size={20} className="fill-current transition-transform duration-200 group-hover/btn:scale-110" /> Play
+            <Play size={20} className="fill-current transition-transform duration-200 group-hover/btn:scale-110" /> {t("billboard.play")}
           </Link>
           <Link
             to={`/title/${title.id}`}
             className="group/btn inline-flex items-center gap-2 rounded bg-white/15 px-7 py-3 text-base font-semibold text-white backdrop-blur-sm transition-all duration-200 hover:bg-white/25 active:scale-[0.98]"
           >
-            <Info size={20} className="transition-transform duration-200 group-hover/btn:scale-110" /> More Info
+            <Info size={20} className="transition-transform duration-200 group-hover/btn:scale-110" /> {t("billboard.more_info")}
           </Link>
         </motion.div>
       </div>

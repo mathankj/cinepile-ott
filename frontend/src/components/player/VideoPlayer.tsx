@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Hls, { type Level, type MediaPlaylist } from "hls.js";
 import { Settings, Check } from "lucide-react";
-import type { DrmConfig } from "../../api/types";
+import type { DrmConfig, SubtitleAsset } from "../../api/types";
 
 /**
  * HLS video player.
@@ -28,6 +28,11 @@ type Props = {
   onEnded?: () => void;
   autoPlay?: boolean;
   drm?: DrmConfig | null;
+  // Sidecar subtitle tracks from the backend playback ticket. Rendered as
+  // `<track>` elements on the <video>. The native controls' captions menu
+  // picks them up automatically; the settings gear's Subtitles submenu
+  // shows them too (sourced from hls.js's combined subtitleTracks).
+  subtitles?: SubtitleAsset[];
 };
 
 type QualityOption = { label: string; index: number }; // -1 = Auto
@@ -41,6 +46,7 @@ export default function VideoPlayer({
   onEnded,
   autoPlay = true,
   drm,
+  subtitles,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -235,8 +241,23 @@ export default function VideoPlayer({
         controlsList="nodownload noplaybackrate noremoteplayback"
         disablePictureInPicture
         disableRemotePlayback
+        crossOrigin="anonymous"
         className="aspect-video w-full"
-      />
+      >
+        {/* Sidecar subtitle tracks. The browser merges these with any tracks
+            declared inside the HLS manifest — both show up in the native
+            captions menu and (via the textTracks API) in our settings gear. */}
+        {(subtitles ?? []).map((s) => (
+          <track
+            key={`${s.language}-${s.kind}`}
+            kind={s.kind === "cc" || s.kind === "sdh" ? "captions" : "subtitles"}
+            label={s.label}
+            srcLang={s.language}
+            src={s.url}
+            default={s.forced}
+          />
+        ))}
+      </video>
       {showSkipIntro && (
         <button
           type="button"

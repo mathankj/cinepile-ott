@@ -239,6 +239,38 @@ export const admin = {
     }).then((r) => r.data);
   },
 
+  // Subtitle (.vtt) upload. The endpoint upserts by (owner, language) so
+  // re-uploading the same language replaces the previous file.
+  uploadTitleSubtitle: (
+    titleId: number,
+    file: File,
+    params: { language: string; kind?: "subtitle" | "cc" | "sdh" | "dubtitle"; forced?: boolean; label?: string },
+  ) => {
+    const data = new FormData();
+    data.append("file", file);
+    return api
+      .post(`/v1/admin/titles/${titleId}/subtitles`, data, {
+        headers: { "Content-Type": "multipart/form-data" },
+        params,
+      })
+      .then((r) => r.data);
+  },
+  uploadEpisodeSubtitle: (
+    episodeId: number,
+    file: File,
+    params: { language: string; kind?: "subtitle" | "cc" | "sdh" | "dubtitle"; forced?: boolean; label?: string },
+  ) => {
+    const data = new FormData();
+    data.append("file", file);
+    return api
+      .post(`/v1/admin/episodes/${episodeId}/subtitles`, data, {
+        headers: { "Content-Type": "multipart/form-data" },
+        params,
+      })
+      .then((r) => r.data);
+  },
+  deleteSubtitle: (subtitleId: number) => api.delete(`/v1/admin/subtitles/${subtitleId}`),
+
   // Audit
   audit: (params: {
     entity_type?: string;

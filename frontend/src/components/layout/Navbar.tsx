@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { Search, Bell, ChevronDown, Menu, X } from "lucide-react";
+import { Search, Bell, ChevronDown, Globe, Menu, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useAuthStore } from "../../stores/auth";
 import { useProfileStore } from "../../stores/profile";
+import { LANGUAGES } from "../../i18n";
 
 /**
  * Top navigation — transparent over hero, fades to solid #141414 on scroll > 60px.
@@ -19,6 +21,7 @@ export default function Navbar() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { user, isLoggedIn, clear } = useAuthStore();
   const nav = useNavigate();
+  const { t } = useTranslation();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 60);
@@ -28,11 +31,11 @@ export default function Navbar() {
   }, []);
 
   const navLinks = [
-    { to: "/", label: "Home" },
-    { to: "/browse?type=series", label: "TV Shows" },
-    { to: "/browse?type=movie", label: "Movies" },
-    { to: "/browse?sort=-published_at", label: "New & Popular" },
-    { to: "/me/list", label: "My List", authOnly: true },
+    { to: "/", label: t("nav.home") },
+    { to: "/browse?type=series", label: t("nav.tv_shows") },
+    { to: "/browse?type=movie", label: t("nav.movies") },
+    { to: "/browse?sort=-published_at", label: t("nav.new_and_popular") },
+    { to: "/me/list", label: t("nav.my_list"), authOnly: true },
   ];
 
   return (
@@ -75,7 +78,7 @@ export default function Navbar() {
             type="button"
             className="md:hidden ml-auto p-2 text-[var(--color-text-secondary)]"
             onClick={() => setDrawerOpen(true)}
-            aria-label="Open menu"
+            aria-label={t("nav.open_menu")}
           >
             <Menu size={22} />
           </button>
@@ -86,18 +89,19 @@ export default function Navbar() {
               type="button"
               onClick={() => nav("/search")}
               className="hover:text-white"
-              aria-label="Search"
+              aria-label={t("nav.search")}
             >
               <Search size={22} />
             </button>
-            <button type="button" className="hover:text-white" aria-label="Notifications">
+            <button type="button" className="hover:text-white" aria-label={t("nav.notifications")}>
               <Bell size={22} />
             </button>
+            <LanguagePicker />
             {isLoggedIn() ? (
               <ProfileMenu user={user} onLogout={clear} />
             ) : (
               <Link to="/login" className="btn-primary !py-[6px] !px-4 text-sm">
-                Sign In
+                {t("nav.sign_in")}
               </Link>
             )}
           </div>
@@ -182,6 +186,49 @@ export default function Navbar() {
   );
 }
 
+/**
+ * Tiny language picker — globe icon opens a popover with EN / HI / TA. The
+ * selected language is stored in localStorage by i18next-browser-languagedetector,
+ * so it survives reloads automatically.
+ */
+function LanguagePicker() {
+  const [open, setOpen] = useState(false);
+  const { i18n } = useTranslation();
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="hover:text-white"
+        aria-label="Language"
+        aria-expanded={open}
+      >
+        <Globe size={20} />
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-2 w-44 rounded bg-black/90 backdrop-blur-md border border-white/10 py-1 text-sm animate-slide-up">
+          {LANGUAGES.map((l) => (
+            <button
+              key={l.code}
+              type="button"
+              onClick={() => {
+                void i18n.changeLanguage(l.code);
+                setOpen(false);
+              }}
+              className={`block w-full px-3 py-2 text-left hover:bg-white/10 ${
+                i18n.resolvedLanguage === l.code ? "text-white" : "text-white/70"
+              }`}
+            >
+              {l.nativeName}
+              <span className="ml-2 text-[11px] text-white/40">{l.code.toUpperCase()}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProfileMenu({
   user,
   onLogout,
@@ -191,6 +238,7 @@ function ProfileMenu({
 }) {
   const [open, setOpen] = useState(false);
   const nav = useNavigate();
+  const { t } = useTranslation();
   const activeProfile = useProfileStore((s) => s.active);
   const clearProfile = useProfileStore((s) => s.clear);
   if (!user) return null;
@@ -201,7 +249,7 @@ function ProfileMenu({
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-2"
-        aria-label="Account menu"
+        aria-label={t("nav.account_menu")}
       >
         <span className="grid h-8 w-8 place-items-center rounded bg-[var(--color-bg-surface)] text-base font-bold text-white">
           {activeProfile?.avatar ?? fallbackInitial}
@@ -232,28 +280,28 @@ function ProfileMenu({
             }}
             className="block w-full px-3 py-2 text-left hover:bg-white/5"
           >
-            Switch profile
+            {t("nav.switch_profile")}
           </button>
           <Link
             to="/me/list"
             onClick={() => setOpen(false)}
             className="block px-3 py-2 hover:bg-white/5"
           >
-            My List
+            {t("nav.my_list")}
           </Link>
           <Link
             to="/me/history"
             onClick={() => setOpen(false)}
             className="block px-3 py-2 hover:bg-white/5"
           >
-            Viewing History
+            {t("nav.viewing_history")}
           </Link>
           <Link
             to="/subscribe"
             onClick={() => setOpen(false)}
             className="block px-3 py-2 hover:bg-white/5"
           >
-            Subscription
+            {t("nav.subscription")}
           </Link>
           {(user.role === "admin" || user.role === "content_manager") && (
             <Link
@@ -261,7 +309,7 @@ function ProfileMenu({
               onClick={() => setOpen(false)}
               className="block px-3 py-2 text-[var(--color-brand)] hover:bg-white/5"
             >
-              Admin
+              {t("nav.admin")}
             </Link>
           )}
           <div className="my-1 h-px bg-white/10" />
@@ -274,7 +322,7 @@ function ProfileMenu({
               nav("/");
             }}
           >
-            Sign out
+            {t("nav.sign_out")}
           </button>
         </div>
       )}

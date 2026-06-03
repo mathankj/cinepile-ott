@@ -517,6 +517,214 @@ def _ext_of(filename: str | None) -> str:
     return ext if ext in {".mp4", ".m4v", ".mov", ".webm", ".m3u8"} else ".mp4"
 
 
+# ---- Subtitle upload (.vtt sidecar) ------------------------------------------
+
+# WebVTT only. SRT can be converted client-side or server-side; we keep this
+# endpoint strict so the player doesn't have to deal with conversion.
+_ALLOWED_SUBTITLE_EXTS = {".vtt"}
+_ALLOWED_SUBTITLE_MIMES = {"text/vtt", "text/plain", "application/octet-stream"}
+_MAX_SUBTITLE_BYTES = 5 * 1024 * 1024  # 5 MB — even feature-length .vtt is well under
+
+
+def _validate_subtitle(file: UploadFile) -> None:
+    ext = _raw_ext(file.filename)
+    if not ext or ext not in _ALLOWED_SUBTITLE_EXTS:
+        raise HTTPException(
+            422,
+            detail={
+                "error": {
+                    "code": "subtitle_extension_not_allowed",
+                    "message": "Only .vtt subtitle files are accepted. Convert .srt before upload.",
+                }
+            },
+        )
+    if file.content_type and file.content_type not in _ALLOWED_SUBTITLE_MIMES:
+        raise HTTPException(
+            415,
+            detail={
+                "error": {
+                    "code": "subtitle_mime_not_allowed",
+                    "message": f"Unexpected content-type '{file.content_type}'.",
+                }
+            },
+        )
+
+
+async def _store_subtitle(
+    db: DbSession,
+    file: UploadFile,
+    *,
+    title_id: int | None,
+    episode_id: int | None,
+    language: str,
+    kind: str,
+    forced: bool,
+    label: str | None,
+    actor,
+    request: Request,
+) -> dict:
+    """Shared write path for title + episode subtitle uploads.
+
+    Side effects:
+      - Streams .vtt into storage at a deterministic key
+      - Upserts the SubtitleTrack row (same language replaces previous)
+      - Writes an audit log entry
+    """
+    from app.models.language import SubtitleTrack
+
+    _ensure_storage()
+    _validate_subtitle(file)
+
+    owner_kind = "titles" if title_id is not None else "episodes"
+    owner_id = title_id if title_id is not None else episode_id
+    key = f"{owner_kind}/{owner_id}/subtitles/{language}.vtt"
+    stored_ref = await storage_svc.aupload_fileobj(
+        key=key,
+        file_obj=_SizeLimitedStream(file.file, _MAX_SUBTITLE_BYTES),
+        content_type="text/vtt",
+    )
+
+    # Upsert by (owner, language) — uploading the same language twice replaces
+    # the previous file instead of stacking duplicates.
+    if title_id is not None:
+        await db.execute(
+            sa_delete(SubtitleTrack).where(
+                SubtitleTrack.title_id == title_id,
+                SubtitleTrack.language == language,
+            )
+        )
+    else:
+        await db.execute(
+            sa_delete(SubtitleTrack).where(
+                SubtitleTrack.episode_id == episode_id,
+                SubtitleTrack.language == language,
+            )
+        )
+    track = SubtitleTrack(
+        title_id=title_id,
+        episode_id=episode_id,
+        language=language,
+        kind=kind,
+        forced=forced,
+        storage_url=stored_ref,
+        label=label,
+    )
+    db.add(track)
+    await db.flush()
+
+    await audit_svc.record(
+        db,
+        actor=actor,
+        action="subtitle.upload",
+        entity_type=owner_kind[:-1],  # "title" or "episode"
+        entity_id=owner_id or 0,
+        after={"language": language, "kind": kind, "storage_url": stored_ref, "key": key},
+        request_id=_req_id(request),
+    )
+
+    return {
+        "id": track.id,
+        "title_id": track.title_id,
+        "episode_id": track.episode_id,
+        "language": track.language,
+        "kind": track.kind,
+        "forced": track.forced,
+        "label": track.label,
+        "storage_url": stored_ref,
+        "playable_url": storage_svc.resolve_url(stored_ref),
+    }
+
+
+@router.post("/titles/{title_id}/subtitles")
+async def upload_title_subtitle(
+    title_id: int,
+    request: Request,
+    db: DbSession,
+    actor: ContentRoleUser,
+    file: UploadFile = File(...),
+    language: str = Query(..., min_length=2, max_length=8, description="ISO 639-1 / BCP-47, e.g. en, ta, hi"),
+    kind: str = Query("subtitle", pattern="^(subtitle|cc|sdh|dubtitle)$"),
+    forced: bool = Query(False),
+    label: str | None = Query(None, max_length=64),
+) -> dict:
+    title = await db.get(Title, title_id)
+    if title is None or title.deleted_at is not None:
+        raise HTTPException(
+            404, detail={"error": {"code": "title_not_found", "message": "Title not found."}}
+        )
+    return await _store_subtitle(
+        db,
+        file,
+        title_id=title.id,
+        episode_id=None,
+        language=language,
+        kind=kind,
+        forced=forced,
+        label=label,
+        actor=actor,
+        request=request,
+    )
+
+
+@router.post("/episodes/{episode_id}/subtitles")
+async def upload_episode_subtitle(
+    episode_id: int,
+    request: Request,
+    db: DbSession,
+    actor: ContentRoleUser,
+    file: UploadFile = File(...),
+    language: str = Query(..., min_length=2, max_length=8),
+    kind: str = Query("subtitle", pattern="^(subtitle|cc|sdh|dubtitle)$"),
+    forced: bool = Query(False),
+    label: str | None = Query(None, max_length=64),
+) -> dict:
+    ep = await db.get(Episode, episode_id)
+    if ep is None:
+        raise HTTPException(
+            404, detail={"error": {"code": "episode_not_found", "message": "Episode not found."}}
+        )
+    return await _store_subtitle(
+        db,
+        file,
+        title_id=None,
+        episode_id=ep.id,
+        language=language,
+        kind=kind,
+        forced=forced,
+        label=label,
+        actor=actor,
+        request=request,
+    )
+
+
+@router.delete("/subtitles/{subtitle_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_subtitle(
+    subtitle_id: int,
+    request: Request,
+    db: DbSession,
+    actor: ContentRoleUser,
+) -> None:
+    """Remove a subtitle track. We delete the DB row only — the .vtt object
+    is left in storage to make undo possible (object storage is cheap;
+    cleaning up belongs to a separate batch job)."""
+    from app.models.language import SubtitleTrack
+
+    track = await db.get(SubtitleTrack, subtitle_id)
+    if track is None:
+        raise HTTPException(
+            404, detail={"error": {"code": "subtitle_not_found", "message": "Subtitle not found."}}
+        )
+    await db.delete(track)
+    await audit_svc.record(
+        db,
+        actor=actor,
+        action="subtitle.delete",
+        entity_type="subtitle",
+        entity_id=subtitle_id,
+        request_id=_req_id(request),
+    )
+
+
 # ---- Tracks (audio + subtitle) ----------------------------------------------
 
 

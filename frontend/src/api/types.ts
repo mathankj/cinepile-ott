@@ -12,9 +12,11 @@ export type Genre = { id: number; slug: string; name: string; kind: string };
 
 export type AudioTrack = { language: string; kind: "original" | "dub"; codec?: string | null };
 export type SubtitleTrack = {
+  id?: number | null;
   language: string;
   kind: "subtitle" | "cc" | "sdh" | "dubtitle";
   forced: boolean;
+  label?: string | null;
 };
 
 export type Person = { id: number; name: string; profile_url?: string | null };
@@ -126,6 +128,14 @@ export type DrmConfig = {
   playback_token: string | null;
 };
 
+export type SubtitleAsset = {
+  language: string;
+  label: string;
+  kind: "subtitle" | "cc" | "sdh" | "dubtitle";
+  url: string;
+  forced: boolean;
+};
+
 export type PlaybackTicket = {
   manifest_url: string;
   token: string;
@@ -134,6 +144,7 @@ export type PlaybackTicket = {
   ref_id: number;
   resume_at_sec: number | null;
   total_sec: number | null;
+  subtitles: SubtitleAsset[];
   drm: DrmConfig | null;
 };
 

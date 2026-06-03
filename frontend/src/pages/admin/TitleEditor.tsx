@@ -221,9 +221,16 @@ export default function TitleEditor() {
           </div>
         </div>
 
-        {/* RIGHT — upload */}
+        {/* RIGHT — uploads */}
         {!isNew && titleId && detail.data?.type === "movie" && (
-          <UploadCard titleId={titleId} onDone={() => qc.invalidateQueries({ queryKey: ["admin", "title", titleId] })} />
+          <div className="space-y-5">
+            <UploadCard titleId={titleId} onDone={() => qc.invalidateQueries({ queryKey: ["admin", "title", titleId] })} />
+            <SubtitleUploadCard
+              titleId={titleId}
+              existing={detail.data?.subtitle_tracks ?? []}
+              onChanged={() => qc.invalidateQueries({ queryKey: ["admin", "title", titleId] })}
+            />
+          </div>
         )}
         {!isNew && detail.data?.type === "series" && (
           <div className="rounded border border-white/10 bg-[var(--color-bg-elevated)] p-5">
@@ -239,6 +246,136 @@ export default function TitleEditor() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Subtitle (.vtt) upload card. Lists existing tracks with delete buttons +
+ * a small form to upload a new one (language, kind, label). Same backend
+ * endpoint upserts by (title, language) so re-uploading replaces the prior
+ * file without admin needing to delete first.
+ */
+function SubtitleUploadCard({
+  titleId,
+  existing,
+  onChanged,
+}: {
+  titleId: number;
+  existing: Array<{ id?: number | null; language: string; kind: string; label?: string | null; forced?: boolean }>;
+  onChanged: () => void;
+}) {
+  const [language, setLanguage] = useState("en");
+  const [kind, setKind] = useState<"subtitle" | "cc" | "sdh" | "dubtitle">("subtitle");
+  const [label, setLabel] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setErr(null);
+    setBusy(true);
+    try {
+      await admin.uploadTitleSubtitle(titleId, file, {
+        language: language.trim(),
+        kind,
+        label: label.trim() || undefined,
+      });
+      onChanged();
+      setLabel("");
+    } catch (e) {
+      setErr(apiErrorMessage(e, "Subtitle upload failed."));
+    } finally {
+      setBusy(false);
+      // Reset the file input so picking the same file again re-fires the change event.
+      e.target.value = "";
+    }
+  }
+
+  async function onDelete(id: number | null | undefined) {
+    if (!id) return;
+    try {
+      await admin.deleteSubtitle(id);
+      onChanged();
+    } catch (e) {
+      setErr(apiErrorMessage(e, "Couldn't delete subtitle."));
+    }
+  }
+
+  return (
+    <div className="rounded border border-white/10 bg-[var(--color-bg-elevated)] p-5">
+      <h3 className="text-sm uppercase tracking-wider text-white/60">Subtitles (.vtt)</h3>
+      <p className="mt-1 text-sm text-white/70">
+        Upload one WebVTT file per language. Re-uploading the same language replaces the prior file.
+      </p>
+
+      {existing.length > 0 && (
+        <ul className="mt-4 space-y-1.5">
+          {existing.map((t, i) => (
+            <li
+              key={t.id ?? `${t.language}-${i}`}
+              className="flex items-center justify-between rounded bg-black/30 px-3 py-2 text-sm"
+            >
+              <span>
+                <span className="font-medium">{t.label || t.language.toUpperCase()}</span>
+                <span className="ml-2 text-white/50">[{t.kind}]</span>
+                {t.forced && <span className="ml-2 rounded bg-white/10 px-1.5 text-[10px] uppercase">Forced</span>}
+              </span>
+              {t.id && (
+                <button
+                  type="button"
+                  onClick={() => onDelete(t.id)}
+                  className="text-xs text-red-300 hover:text-red-200"
+                >
+                  Remove
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <input
+          type="text"
+          value={language}
+          onChange={(e) => setLanguage(e.target.value)}
+          placeholder="Lang (en, ta, hi)"
+          maxLength={8}
+          className="input-base text-sm"
+        />
+        <select
+          value={kind}
+          onChange={(e) => setKind(e.target.value as typeof kind)}
+          className="input-base text-sm"
+        >
+          <option value="subtitle">Subtitle (translation)</option>
+          <option value="cc">CC (same-language)</option>
+          <option value="sdh">SDH (deaf/hard-of-hearing)</option>
+          <option value="dubtitle">Dubtitle</option>
+        </select>
+        <input
+          type="text"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="Label (optional)"
+          maxLength={64}
+          className="input-base text-sm"
+        />
+      </div>
+      <label className="mt-3 flex cursor-pointer items-center gap-3 rounded border border-dashed border-white/30 p-3 hover:border-white/60">
+        <UploadIcon size={18} />
+        <span className="text-sm">{busy ? "Uploading…" : "Choose .vtt file"}</span>
+        <input
+          type="file"
+          accept=".vtt"
+          className="hidden"
+          onChange={onFile}
+          disabled={busy}
+        />
+      </label>
+      {err && <div className="mt-3 text-sm text-red-300">{err}</div>}
     </div>
   );
 }

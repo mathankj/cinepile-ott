@@ -80,9 +80,9 @@ e2e or backend test that would fail if it broke.
 | Sign Up with same shell | ✅ | `Signup.tsx` |
 | Floating-label inputs (Netflix-style) | ✅ | `.input-auth` |
 | Remember me checkbox | ⚠️ | UI only; doesn't actually change refresh-token TTL yet |
-| Forgot password | ❌ | No password-reset email flow yet |
-| Social login (Google/FB) | ❌ | Out of V1 |
-| Email verification | ❌ | Out of V1 |
+| Forgot password | ❌ | Needs SMTP. See "Password reset wiring" below before starting. |
+| Social login (Google/FB) | ❌ | Needs Google/Apple OAuth credentials. See "Social login wiring" below. |
+| Email verification | ❌ | Needs SMTP (same wiring as password reset). |
 | Session token rotation on refresh | ✅ | Backend issues new pair on each refresh |
 | Logout invalidates session | ✅ | `clear()` + backend logout endpoint |
 | Redirect back to original URL after login | ✅ | `subscribe-trailer.spec.ts` |
@@ -171,10 +171,11 @@ e2e or backend test that would fail if it broke.
 
 | Pattern | Status | Notes |
 |---|---|---|
-| UI translation (i18n) | ❌ | Out of V1 — English-only UI |
-| Multi-language metadata (title / synopsis) | ⚠️ | Backend has `original_language`; no localised strings table |
+| UI translation (i18n) | ✅ | i18next + EN/HI/TA, language picker in navbar (globe icon), persisted to localStorage. Adding a 4th language = drop a JSON file + register in `src/i18n/index.ts`. |
+| Multi-language metadata (title / synopsis) | ⚠️ | Backend has `original_language`; no localised strings table yet. Phase 2 if marketing needs Hindi/Tamil synopses. |
 | Per-region content filtering | ⚠️ | `/v1/home?country=IN` accepts param; not exposed in UI |
-| Subtitle / dub language picker | ✅ | Player settings gear |
+| Subtitle / dub language picker (in-manifest) | ✅ | Player settings gear (hls.js audioTracks + subtitleTracks) |
+| Sidecar subtitle upload (.vtt per language) | ✅ | Admin can upload one .vtt per language; player attaches as `<track>` |
 
 ## What's strictly out of V1 (and you should know now)
 
@@ -192,3 +193,64 @@ These all need significant new work and most need ongoing $$:
 
 If any of these are on the original client deliverable, flag them NOW so we
 can scope a phase 2 contract.
+
+---
+
+## Password reset wiring (when you're ready)
+
+What you need: an SMTP provider, ~30 min of eng time.
+
+1. Pick a provider — any of these work; all have free tiers:
+   - **AWS SES** — cheapest at scale, ~₹7 per 1000 emails. Free tier 62k/mo from EC2.
+   - **Sendgrid** — 100/day free, simple Python SDK.
+   - **Postmark** — 100/mo free, best deliverability in this list.
+   - **Resend** — 3000/mo free, easiest API.
+
+2. Backend changes (file paths for reference):
+   - `app/services/auth.py` → add `request_password_reset(email)` that mints a
+     short-lived JWT (~1h TTL) and emails a `/reset-password?token=...` link.
+   - `app/services/auth.py` → add `complete_password_reset(token, new_pwd)`.
+   - `app/api/v1/auth.py` → expose `POST /v1/auth/forgot-password` (rate-limit
+     by email to prevent enumeration) and `POST /v1/auth/reset-password`.
+   - `backend/.env` → `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`,
+     `MAIL_FROM`.
+
+3. Frontend:
+   - `pages/ForgotPassword.tsx` — email-only form, posts to /v1/auth/forgot-password.
+   - `pages/ResetPassword.tsx` — reads `?token=`, asks for new password, posts.
+   - Add "Need help?" link on `pages/Login.tsx` to route to `/forgot-password`.
+
+4. E2E: extend `tests/e2e/auth.spec.ts` with the round trip — request reset,
+   intercept the outbound email (or use Mailpit / Mailtrap in dev), complete
+   reset, log in with the new password.
+
+## Social login wiring (when you're ready)
+
+Strongly recommend doing this AFTER password reset — social login looks small
+but the OAuth dance + token refresh + account-linking edge cases triple the
+test surface.
+
+1. Provider — Google is the highest ROI for India. Apple is required if you
+   ever ship to iOS. Facebook is dying for OTT but cheap to add.
+
+2. Backend:
+   - `pip install authlib` (or `httpx-oauth`). Add `OAUTH_GOOGLE_CLIENT_ID`,
+     `OAUTH_GOOGLE_CLIENT_SECRET` env vars.
+   - Add `app/api/v1/oauth.py` with `GET /v1/auth/google/start` (redirect to
+     Google) and `GET /v1/auth/google/callback` (exchange code → tokens →
+     find-or-create user → issue our own JWT pair).
+   - Add `oauth_identity` table: `(provider, provider_user_id, user_id)`
+     unique constraint so the same Google account always maps to one user.
+
+3. Frontend:
+   - "Continue with Google" button on Login + Signup that opens the start URL
+     in the same tab (NOT a popup — iOS Safari blocks popups for cross-origin
+     redirects).
+   - After callback the backend redirects to `/auth/callback?token=...&refresh=...`
+     and a small handler page stuffs them into the auth store + nav("/").
+
+4. Account linking: when a logged-in user clicks "Connect Google" in settings
+   we attach the oauth_identity to their existing record instead of creating
+   a duplicate.
+
+Budget: ~1 day of eng for Google only, ~2 days for Google + Apple together.

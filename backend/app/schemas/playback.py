@@ -7,6 +7,21 @@ from typing import Literal
 from pydantic import BaseModel
 
 
+class SubtitleAsset(BaseModel):
+    """Sidecar subtitle track delivered alongside the manifest URL.
+
+    The player renders these as <track> elements on the <video>. URL is a
+    short-lived presigned link if storage is private; a permanent public URL
+    if storage_public_url is configured. Lifetime tracks the manifest's TTL.
+    """
+
+    language: str           # ISO 639-1 / BCP-47 — used as srclang attribute
+    label: str              # Human label for the menu ("English [CC]", "Tamil")
+    kind: str               # 'subtitle' | 'cc' | 'sdh' | 'dubtitle'
+    url: str                # Playable .vtt URL
+    forced: bool = False    # Browser default-on hint
+
+
 class DrmConfig(BaseModel):
     """DRM key-system configuration the player needs to make a license request.
 
@@ -42,6 +57,10 @@ class PlaybackTicket(BaseModel):
     # Useful for the player progress bar; comes from the episode's runtime
     # or the title's runtime_minutes * 60 (None if not yet known).
     total_sec: int | None = None
+    # Sidecar subtitles uploaded by admins. Empty list when nothing has been
+    # uploaded — the manifest itself may still carry in-stream subtitle
+    # renditions (the player handles those automatically via the settings gear).
+    subtitles: list[SubtitleAsset] = []
     # DRM — null when no DRM provider is configured (the V1 default for dev).
     # Once a provider is wired up (Widevine / PlayReady / FairPlay) this
     # block is populated and the player switches to encrypted playback.

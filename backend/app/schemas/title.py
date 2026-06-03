@@ -27,9 +27,11 @@ class AudioTrackRead(BaseModel):
 
 class SubtitleTrackRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+    id: int | None = None  # null for in-manifest tracks (no DB row of their own)
     language: str
     kind: Literal["subtitle", "cc", "sdh", "dubtitle"]
     forced: bool
+    label: str | None = None
 
 
 class PersonRead(BaseModel):

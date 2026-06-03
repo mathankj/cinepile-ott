@@ -89,6 +89,7 @@ export default function Watch() {
         resumeAtSec={ticket.resume_at_sec}
         onProgress={handleProgress}
         drm={ticket.drm}
+        subtitles={ticket.subtitles}
       />
     </WatchSurface>
   );
