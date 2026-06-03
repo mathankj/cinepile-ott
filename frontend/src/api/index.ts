@@ -79,7 +79,9 @@ export const catalog = {
       .then((r) => r.data),
 
   genres: () =>
-    api.get<{ id: number; slug: string; name: string; kind: string }[]>("/v1/genres").then((r) => r.data),
+    api
+      .get<{ id: number; slug: string; name: string; kind: string }[]>("/v1/home/genres")
+      .then((r) => r.data),
 };
 
 // ---------- Playback ----------

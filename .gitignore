@@ -51,6 +51,9 @@ logs/
 # Test/load run artifacts
 backend/reports/
 
+# Playwright artefacts (screenshots + console logs) — not part of source
+frontend/.playwright-mcp/
+
 # Local uploads / media (never commit binaries)
 backend/uploads/
 backend/media/

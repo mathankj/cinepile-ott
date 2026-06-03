@@ -1,13 +1,29 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import type { TitleSummary } from "../../api/types";
 
 /**
  * Single-title card — landscape 16:9.
- * Hover effects: scale 1.08 + sibling translate handled by parent flex gap.
- * Netflix uses cubic-bezier(0.5, 0, 0.1, 1) over 300ms.
+ *
+ * Hover: scale 1.08 with sibling translate (handled by parent gap).
+ * Easing: Netflix's cubic-bezier(0.5, 0, 0.1, 1) over 300ms.
+ *
+ * Image fallback: when the backdrop/poster fails to load (or doesn't exist),
+ * we render the title text on a deterministic gradient so the user can still
+ * tell what they're looking at.
  */
-export function TitleCard({ title, progressPercent }: { title: TitleSummary; progressPercent?: number }) {
+export function TitleCard({
+  title,
+  progressPercent,
+}: {
+  title: TitleSummary;
+  progressPercent?: number;
+}) {
+  const imgUrl = title.backdrop_url || title.poster_url;
+  const [imgFailed, setImgFailed] = useState(false);
+  const showImage = imgUrl && !imgFailed;
+
   return (
     <Link
       to={`/title/${title.id}`}
@@ -18,38 +34,40 @@ export function TitleCard({ title, progressPercent }: { title: TitleSummary; pro
         transition={{ duration: 0.3, ease: [0.5, 0, 0.1, 1] }}
         className="relative aspect-video w-full overflow-hidden rounded-[4px] bg-[var(--color-bg-elevated)]"
       >
-        {title.backdrop_url || title.poster_url ? (
+        {showImage ? (
           <img
-            src={title.backdrop_url || title.poster_url || ""}
+            src={imgUrl}
             alt={title.title}
             loading="lazy"
             className="h-full w-full object-cover"
-            onError={(e) => {
-              // Fallback to placeholder gradient
-              (e.target as HTMLImageElement).style.display = "none";
-            }}
+            onError={() => setImgFailed(true)}
           />
         ) : (
-          <div className="absolute inset-0 bg-gradient-to-br from-[var(--color-bg-surface)] to-[var(--color-bg-elevated)]" />
+          <FallbackTile title={title.title} />
         )}
-        {/* Bottom title strip — appears on hover */}
-        <div className="absolute inset-x-0 bottom-0 flex items-end bg-gradient-to-t from-black/85 via-black/30 to-transparent p-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+
+        {/* Always-visible bottom title strip */}
+        <div className="absolute inset-x-0 bottom-0 flex items-end bg-gradient-to-t from-black/85 via-black/30 to-transparent p-2 pt-6">
           <div className="min-w-0">
-            <div className="truncate text-[13px] font-semibold text-white">{title.title}</div>
-            <div className="text-[11px] text-white/70">
+            <div className="truncate text-[13px] font-semibold leading-tight text-white">
+              {title.title}
+            </div>
+            <div className="mt-0.5 text-[11px] text-white/70">
               {title.type === "series" ? "Series" : "Movie"}
               {title.release_year ? ` · ${title.release_year}` : ""}
               {title.age_rating ? ` · ${title.age_rating}` : ""}
             </div>
           </div>
         </div>
+
         {/* FREE badge */}
         {title.is_free && (
-          <div className="absolute left-2 top-2 rounded bg-[var(--color-brand)] px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-white">
+          <div className="absolute left-2 top-2 rounded bg-[var(--color-brand)] px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-white shadow-lg">
             FREE
           </div>
         )}
-        {/* Progress bar for Continue Watching */}
+
+        {/* Continue Watching progress bar */}
         {typeof progressPercent === "number" && progressPercent > 0 && (
           <div className="absolute inset-x-0 bottom-0 h-1 bg-white/20">
             <div
@@ -60,5 +78,20 @@ export function TitleCard({ title, progressPercent }: { title: TitleSummary; pro
         )}
       </motion.div>
     </Link>
+  );
+}
+
+function FallbackTile({ title }: { title: string }) {
+  // Hash title → hue → consistent gradient across reloads
+  let hash = 0;
+  for (let i = 0; i < title.length; i++) hash = (hash * 31 + title.charCodeAt(i)) | 0;
+  const hue = Math.abs(hash) % 360;
+  const grad = `linear-gradient(135deg, hsl(${hue}, 35%, 22%), hsl(${(hue + 40) % 360}, 28%, 12%))`;
+  return (
+    <div className="absolute inset-0 flex items-center justify-center p-3" style={{ background: grad }}>
+      <div className="text-center text-white">
+        <div className="text-[15px] font-bold leading-tight drop-shadow">{title}</div>
+      </div>
+    </div>
   );
 }

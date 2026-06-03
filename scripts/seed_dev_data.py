@@ -54,6 +54,17 @@ PLANS = [
 ]
 
 
+# Image URL conventions for dev:
+# - poster:   600x900 (2:3 portrait — for boxshot rails)
+# - backdrop: 1920x1080 (16:9 landscape — for hero billboards & home-row cards)
+# - picsum.photos with deterministic seeds → same dev box, same image every reload
+def _poster(seed: str) -> str:
+    return f"https://picsum.photos/seed/{seed}-poster/600/900"
+
+def _backdrop(seed: str) -> str:
+    return f"https://picsum.photos/seed/{seed}-backdrop/1920/1080"
+
+
 MOVIES = [
     {
         "slug": "big-buck-bunny",
@@ -64,7 +75,8 @@ MOVIES = [
         "age_rating": "U",
         "original_language": "en",
         "countries": ["NL"],
-        "poster_url": "https://upload.wikimedia.org/wikipedia/commons/c/c5/Big_buck_bunny_poster_big.jpg",
+        "poster_url": _poster("bbb"),
+        "backdrop_url": _backdrop("bbb"),
         "genres": ["animation"],
         "hls": "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
         "audio": [{"language": "en", "kind": "original"}, {"language": "ta", "kind": "dub"}],
@@ -82,7 +94,8 @@ MOVIES = [
         "age_rating": "U/A",
         "original_language": "en",
         "countries": ["NL"],
-        "poster_url": "https://upload.wikimedia.org/wikipedia/commons/c/c1/Sintel_poster.jpg",
+        "poster_url": _poster("sintel"),
+        "backdrop_url": _backdrop("sintel"),
         "genres": ["animation", "drama"],
         "hls": "https://bitdash-a.akamaihd.net/content/sintel/hls/playlist.m3u8",
         "audio": [{"language": "en", "kind": "original"}],
@@ -97,7 +110,8 @@ MOVIES = [
         "age_rating": "U/A",
         "original_language": "en",
         "countries": ["NL"],
-        "poster_url": "https://upload.wikimedia.org/wikipedia/commons/7/7a/Tears_of_Steel_frame.jpg",
+        "poster_url": _poster("tos"),
+        "backdrop_url": _backdrop("tos"),
         "genres": ["sci-fi"],
         "hls": "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8",
         "audio": [{"language": "en", "kind": "original"}],
@@ -113,6 +127,8 @@ SERIES = {
     "age_rating": "U/A",
     "original_language": "ta",
     "countries": ["IN"],
+    "poster_url": _poster("chronicles"),
+    "backdrop_url": _backdrop("chronicles"),
     "genres": ["drama"],
     "series_type": "ongoing",
     "audio": [{"language": "ta", "kind": "original"}, {"language": "en", "kind": "dub"}, {"language": "hi", "kind": "dub"}],
@@ -181,6 +197,7 @@ async def _upsert_movie(s, data):
             original_language=data["original_language"],
             countries=data["countries"],
             poster_url=data["poster_url"],
+            backdrop_url=data.get("backdrop_url"),
             status="published",
             published_at=datetime.now(tz=timezone.utc),
         )
@@ -192,6 +209,11 @@ async def _upsert_movie(s, data):
             s.add(AudioTrack(title_id=t.id, **a))
         for sb in data.get("subs", []):
             s.add(SubtitleTrack(title_id=t.id, **sb))
+    else:
+        # Refresh image URLs on every seed run so dev environments stay consistent
+        # even if the upstream URL pattern changes.
+        t.poster_url = data["poster_url"]
+        t.backdrop_url = data.get("backdrop_url")
     return t
 
 
@@ -209,6 +231,8 @@ async def _upsert_series(s, data):
             age_rating=data["age_rating"],
             original_language=data["original_language"],
             countries=data["countries"],
+            poster_url=data.get("poster_url"),
+            backdrop_url=data.get("backdrop_url"),
             status="published",
             published_at=datetime.now(tz=timezone.utc),
         )
@@ -251,6 +275,10 @@ async def _upsert_series(s, data):
                         storage_url=PLACEHOLDER_EPISODE_HLS,
                     )
                 )
+    else:
+        # Refresh image URLs even if the series already exists
+        t.poster_url = data.get("poster_url")
+        t.backdrop_url = data.get("backdrop_url")
     return t
 
 

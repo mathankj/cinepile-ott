@@ -14,9 +14,18 @@ export default function Home() {
     staleTime: 60_000,
   });
 
-  // Pick a hero from the first row's first item (typically continue_watching
-  // or new_releases — whichever is first in the response).
-  const hero = data?.rows[0]?.items[0] ?? null;
+  // Hero selection: prefer the first title across all rows that has a
+  // backdrop_url; fall back to the first title overall if none have art.
+  // Avoids a flat-black hero when the top row's first item lacks art.
+  const hero = (() => {
+    if (!data?.rows.length) return null;
+    for (const r of data.rows) {
+      for (const t of r.items) {
+        if (t.backdrop_url) return t;
+      }
+    }
+    return data.rows[0]?.items[0] ?? null;
+  })();
 
   if (isLoading) {
     return <HomeSkeleton />;

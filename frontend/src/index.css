@@ -75,3 +75,74 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .animate-fade-in { animation: fadeIn 400ms ease-out forwards; }
 .animate-scale-in { animation: scaleIn 300ms var(--ease-netflix) forwards; }
 .animate-slide-up { animation: slideUp 250ms var(--ease-netflix) forwards; }
+
+/*
+ * Composite utilities — used everywhere for CTAs / inputs.
+ * Plain CSS classes (not Tailwind utilities) so they survive class-purge edge cases.
+ */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 4px;
+  background: var(--color-brand);
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #fff;
+  transition: background-color 200ms ease;
+  cursor: pointer;
+  border: 0;
+}
+.btn-primary:hover { background: var(--color-brand-hover); }
+.btn-primary:active { background: var(--color-brand-dark); }
+.btn-primary:focus-visible { outline: 2px solid rgba(255,255,255,0.4); outline-offset: 2px; }
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.15);
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #fff;
+  backdrop-filter: blur(8px);
+  transition: background-color 200ms ease;
+  cursor: pointer;
+  border: 0;
+}
+.btn-secondary:hover { background: rgba(255,255,255,0.25); }
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.4);
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #fff;
+  background: transparent;
+  transition: border-color 200ms ease;
+  cursor: pointer;
+}
+.btn-ghost:hover { border-color: #fff; }
+
+.input-base {
+  display: block;
+  width: 100%;
+  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: var(--color-bg-surface);
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  color: #fff;
+}
+.input-base::placeholder { color: rgba(255,255,255,0.4); }
+.input-base:focus { outline: none; border-color: rgba(255,255,255,0.6); }
