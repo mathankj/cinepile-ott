@@ -318,13 +318,30 @@ def _ensure_storage() -> None:
         )
 
 
+def _raw_ext(filename: str | None) -> str:
+    """Strict extension lookup — returns raw ext or empty string.
+    Differs from _ext_of (which coerces to .mp4 for storage-key safety).
+    Use this for VALIDATION, _ext_of() for KEY-NAMING."""
+    if not filename:
+        return ""
+    dot = filename.rfind(".")
+    if dot < 0:
+        return ""
+    return filename[dot:].lower()
+
+
 def _validate_upload(file) -> None:
     """Sniff filename + content-type. Cheap rejection of clearly-wrong uploads."""
-    ext = _ext_of(file.filename).lower()
-    if ext not in _ALLOWED_VIDEO_EXTS:
+    ext = _raw_ext(file.filename)
+    if not ext or ext not in _ALLOWED_VIDEO_EXTS:
         raise HTTPException(
             415,
-            detail={"error": {"code": "unsupported_media", "message": f"Extension {ext} is not allowed."}},
+            detail={
+                "error": {
+                    "code": "unsupported_media",
+                    "message": f"Extension '{ext or '(none)'}' is not allowed. Allowed: {sorted(_ALLOWED_VIDEO_EXTS)}",
+                }
+            },
         )
     if file.content_type and file.content_type not in _ALLOWED_VIDEO_MIMES:
         raise HTTPException(
