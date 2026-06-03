@@ -22,8 +22,10 @@ export async function loginAs(page: Page, who: keyof typeof ACCOUNTS) {
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
   await page.locator('button[type="submit"]').click();
-  // After successful login the router redirects to "/"
-  await page.waitForURL("/", { timeout: 10_000 });
+  // After successful login the router redirects to "/" (or the captured ?from=).
+  // Under parallel-worker load the exact-URL wait can race the JS that flips
+  // the URL bar — accept any non-/login URL as "logged in".
+  await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 20_000 });
 }
 
 /**
@@ -36,8 +38,9 @@ export async function loginAs(page: Page, who: keyof typeof ACCOUNTS) {
  *
  * Generous timeout: Vite dev mode compiles route chunks on first request, and
  * the React Query call has retry: 1 (so a transient cold-Neon flake adds another
- * round trip).
+ * round trip). Under parallel-worker load (matrix file + home file both
+ * running) Neon + bcrypt can be slow, so we give it 45s.
  */
 export async function waitForHomeContent(page: Page) {
-  await expect(page.locator("main h1").first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("main h1").first()).toBeVisible({ timeout: 45_000 });
 }

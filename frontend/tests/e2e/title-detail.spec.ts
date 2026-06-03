@@ -17,11 +17,14 @@ test.describe("Title detail + season + playback gating", () => {
   test("series → season page lists episodes with Play buttons", async ({ page }) => {
     // Find the series-typed title in the catalog and navigate
     await page.goto("/browse?type=series");
-    // Wait for grid load
     await expect(page.locator('a[href^="/title/"]').first()).toBeVisible({ timeout: 15_000 });
     await page.locator('a[href^="/title/"]').first().click();
     await page.waitForURL(/\/title\/\d+$/);
-    // Click first season link
+    // Wait for the TitleDetail data query to resolve (heading is rendered by
+    // the loaded component, so it proves both lazy chunk + /v1/titles/:id are done).
+    await expect(page.locator("main h1").first()).toBeVisible({ timeout: 30_000 });
+    // Now seasons section should be rendered too.
+    await expect(page.locator('a[href*="/season/"]').first()).toBeVisible({ timeout: 10_000 });
     await page.locator('a[href*="/season/"]').first().click();
     await page.waitForURL(/\/title\/\d+\/season\/\d+$/);
 

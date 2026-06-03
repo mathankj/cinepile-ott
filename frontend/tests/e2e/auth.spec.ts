@@ -24,13 +24,16 @@ test.describe("Auth flow", () => {
     const ts = Date.now();
     const email = `new-${ts}@anjaneya.app`;
     await page.goto("/signup");
-    await page.locator('input[placeholder*="name" i]').fill("New User");
-    await page.locator('input[type="email"]').fill(email);
-    await page.locator('input[type="password"]').fill("supersecret9");
+    // New floating-label form: target by id (set on each FloatingField input).
+    await page.locator('#signup-name').fill("New User");
+    await page.locator('#signup-email').fill(email);
+    await page.locator('#signup-password').fill("supersecret9");
     await page.locator('button[type="submit"]').click();
     await page.waitForURL("/", { timeout: 10_000 });
-    // Logged in — Sign In button is gone
-    await expect(page.locator("text=Sign In")).toHaveCount(0);
+    // Logged in — the navbar's anonymous Sign In CTA is gone (the only one).
+    // Drawer / footer copy may still contain "Sign In" strings but the link
+    // with href="/login" is the canonical check.
+    await expect(page.locator('a[href="/login"]:has-text("Sign In")')).toHaveCount(0);
   });
 
   test("logout via profile menu clears session", async ({ page }, testInfo) => {

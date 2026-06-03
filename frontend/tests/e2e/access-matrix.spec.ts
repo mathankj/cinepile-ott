@@ -71,12 +71,13 @@ test.describe("Access matrix (role × route)", () => {
           }
 
           await page.goto(row.path);
-          // Give the full lazy-chunk + ProtectedRoute redirect chain time to
-          // settle. /admin/users + /admin/audit are nested under the lazy
-          // AdminLayout chunk; the inner role check can't fire until that
-          // chunk has loaded, which takes a beat on a cold Vite cache.
-          await page.waitForLoadState("networkidle");
-          await page.waitForTimeout(800);
+          // We can't rely on networkidle because picsum.photos images on home/
+          // detail pages keep network "busy" for too long. Instead wait for
+          // domcontentloaded + a fixed settle that's long enough for nested
+          // lazy chunks (AdminLayout) + their inner ProtectedRoute redirects
+          // to fire. 1500ms is empirically reliable on a warmed Vite cache.
+          await page.waitForLoadState("domcontentloaded");
+          await page.waitForTimeout(1500);
 
           const url = new URL(page.url());
           const landed = url.pathname;

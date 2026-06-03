@@ -58,6 +58,10 @@ function lazyRoute(Component: React.LazyExoticComponent<React.ComponentType>) {
 }
 
 export const router = createBrowserRouter([
+  // Auth routes — rendered WITHOUT AppLayout so the Netflix-style full-bleed
+  // hero card has no navbar/footer chrome around it.
+  { path: "/login", element: lazyRoute(Login) },
+  { path: "/signup", element: lazyRoute(Signup) },
   {
     element: <AppLayout />,
     children: [
@@ -67,8 +71,6 @@ export const router = createBrowserRouter([
       { path: "/title/:id", element: lazyRoute(TitleDetail) },
       { path: "/title/:titleId/season/:seasonNumber", element: lazyRoute(SeasonPage) },
       { path: "/watch/:kind/:id", element: lazyRoute(Watch) },
-      { path: "/login", element: lazyRoute(Login) },
-      { path: "/signup", element: lazyRoute(Signup) },
       {
         path: "/subscribe",
         element: <ProtectedRoute>{lazyRoute(Subscribe)}</ProtectedRoute>,

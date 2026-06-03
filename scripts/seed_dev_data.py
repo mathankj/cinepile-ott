@@ -231,6 +231,52 @@ SERIES = {
 # player has something real to chew on during dev.
 PLACEHOLDER_EPISODE_HLS = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
 
+# Pioneer One — Creative Commons (CC-BY-NC-SA) science-fiction web series, 6
+# episodes 2010-2013, produced by VODO. The ONLY mainstream legit open-license
+# multi-episode web series (K-dramas are all copyrighted). Original MP4s live
+# on Internet Archive (https://archive.org/details/pioneer.one); for dev we
+# point every episode at the same placeholder HLS so the player has real
+# video to chew on. Replace with the actual streams once they're transcoded
+# to your own B2 bucket as HLS.
+PIONEER_ONE = {
+    "slug": "pioneer-one",
+    "title": "Pioneer One",
+    "synopsis": (
+        "A mysterious craft re-enters Earth's orbit, scattering radioactive "
+        "debris over North America. As Homeland Security investigates, they "
+        "discover the survivor is the long-lost child of a Cold War-era "
+        "Soviet space program."
+    ),
+    "release_year": 2010,
+    "age_rating": "U/A",
+    "original_language": "en",
+    "countries": ["US"],
+    "poster_url": _poster("pioneer-one"),
+    "backdrop_url": _backdrop("pioneer-one"),
+    "genres": ["sci-fi", "drama"],
+    "series_type": "limited",
+    "audio": [
+        {"language": "en", "kind": "original"},
+    ],
+    "subs": [
+        {"language": "en", "kind": "subtitle", "forced": False},
+    ],
+    "seasons": [
+        {
+            "season_number": 1,
+            "name": "Season 1",
+            "episodes": [
+                {"episode_number": 1, "name": "Pilot", "runtime_seconds": 2280, "intro_start": 0, "intro_end": 30, "credits_start": 2160, "next_cue": 2230},
+                {"episode_number": 2, "name": "Cynthia", "runtime_seconds": 1620, "intro_start": 0, "intro_end": 30, "credits_start": 1500, "next_cue": 1570},
+                {"episode_number": 3, "name": "Just Below the Sky", "runtime_seconds": 1500, "intro_start": 0, "intro_end": 30, "credits_start": 1380, "next_cue": 1450},
+                {"episode_number": 4, "name": "It's Always Different", "runtime_seconds": 1380, "intro_start": 0, "intro_end": 30, "credits_start": 1260, "next_cue": 1330},
+                {"episode_number": 5, "name": "An Earnest Reply", "runtime_seconds": 1620, "intro_start": 0, "intro_end": 30, "credits_start": 1500, "next_cue": 1570},
+                {"episode_number": 6, "name": "Memory the Sense", "runtime_seconds": 1860, "intro_start": 0, "intro_end": 30, "credits_start": 1740, "next_cue": 1810},
+            ],
+        },
+    ],
+}
+
 
 async def _upsert_genre(s, slug, name, kind):
     g = await s.scalar(select(Genre).where(Genre.slug == slug))
@@ -344,9 +390,12 @@ async def _upsert_series(s, data):
                     )
                 )
     else:
-        # Refresh image URLs even if the series already exists
+        # Refresh stable fields on every seed run so dev DBs stay consistent
+        # with the script. (series_type is enum-constrained in the schema, so
+        # an out-of-range value would 500 on detail — keep this in sync.)
         t.poster_url = data.get("poster_url")
         t.backdrop_url = data.get("backdrop_url")
+        t.series_type = data.get("series_type")
     return t
 
 
@@ -401,6 +450,7 @@ async def main() -> None:
 
         print("Seeding the series...")
         series = await _upsert_series(s, SERIES)
+        await _upsert_series(s, PIONEER_ONE)
 
         await s.commit()
 
