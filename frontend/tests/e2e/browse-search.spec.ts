@@ -14,10 +14,10 @@ test.describe("Browse + Search", () => {
 
   test("genre dropdown is populated from API", async ({ page }) => {
     await page.goto("/browse");
-    const genreSelect = page.locator("select").first();
+    // /browse has three filter selects now: Type / Genre / Sort. Target Genre
+    // explicitly by its aria-label (the type filter has 3 options, not 6).
+    const genreSelect = page.locator('select[aria-label="Genre"]');
     await expect(genreSelect).toBeVisible();
-    // Wait for the second option to appear (genres are fetched async via TanStack
-    // Query — the initial render has only "All genres", then options stream in).
     await expect(genreSelect.locator("option")).toHaveCount(6, { timeout: 15_000 });
   });
 

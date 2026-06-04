@@ -53,8 +53,10 @@ export default function Navbar() {
             </span>
           </Link>
 
-          {/* Desktop nav */}
-          <nav className="hidden md:flex items-center gap-[20px] text-[14px] text-[var(--color-text-secondary)]">
+          {/* Desktop nav — gated on lg: (1024px+) instead of md: (768px+) because
+              at iPad-portrait (768) the 5 nav links + brand wrapped to two lines.
+              Tablets now also see the hamburger drawer. */}
+          <nav className="hidden lg:flex items-center gap-[20px] text-[14px] text-[var(--color-text-secondary)]">
             {navLinks
               .filter((l) => !l.authOnly || isLoggedIn())
               .map((l) => (
@@ -73,18 +75,18 @@ export default function Navbar() {
               ))}
           </nav>
 
-          {/* Mobile menu button (left-side after logo) */}
+          {/* Hamburger — shown below lg so tablets get the drawer too. */}
           <button
             type="button"
-            className="md:hidden ml-auto p-2 text-[var(--color-text-secondary)]"
+            className="lg:hidden ml-auto p-2 text-[var(--color-text-secondary)]"
             onClick={() => setDrawerOpen(true)}
             aria-label={t("nav.open_menu")}
           >
             <Menu size={22} />
           </button>
 
-          {/* Right cluster (desktop only) */}
-          <div className="ml-auto hidden md:flex items-center gap-[22px] text-[var(--color-text-secondary)]">
+          {/* Right cluster — also lg+. */}
+          <div className="ml-auto hidden lg:flex items-center gap-[22px] text-[var(--color-text-secondary)]">
             <button
               type="button"
               onClick={() => nav("/search")}
@@ -108,9 +110,9 @@ export default function Navbar() {
         </div>
       </header>
 
-      {/* Mobile drawer */}
+      {/* Mobile + tablet drawer */}
       {drawerOpen && (
-        <div className="fixed inset-0 z-[60] md:hidden">
+        <div className="fixed inset-0 z-[60] lg:hidden">
           <div
             className="absolute inset-0 bg-black/70 animate-fade-in"
             onClick={() => setDrawerOpen(false)}

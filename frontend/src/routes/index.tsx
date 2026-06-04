@@ -77,17 +77,24 @@ function ProfileGate({ children }: { children: React.ReactNode }) {
   const loc = useLocation();
   const isLoggedIn = useAuthStore((s) => !!s.accessToken);
   const active = useProfileStore((s) => s.active);
-  // `hasHydrated()` is not reactive — subscribe to onFinishHydration to flip
-  // local state when it completes. Without this, a logged-in user who genuinely
-  // has no selected profile would never get redirected to /profiles on hard
-  // reload (because the gate's first render sees hydrated=false and stays put,
-  // and never re-renders since `active` doesn't change from its initial null).
-  const [hydrated, setHydrated] = useState(() => useProfileStore.persist.hasHydrated());
+  // Wait for BOTH stores to finish persist-hydration before deciding. If we
+  // only checked the profile store, a hard navigation that hits this gate
+  // before the auth store rehydrates would see isLoggedIn=false (no token
+  // yet) → no redirect → then the redirect would fire one tick later, AFTER
+  // the page rendered, causing a visible URL flip and lost user state.
+  const [profileHydrated, setProfileHydrated] = useState(() =>
+    useProfileStore.persist.hasHydrated(),
+  );
+  const [authHydrated, setAuthHydrated] = useState(() => useAuthStore.persist.hasHydrated());
   useEffect(() => {
-    if (hydrated) return;
-    const unsub = useProfileStore.persist.onFinishHydration(() => setHydrated(true));
-    return unsub;
-  }, [hydrated]);
+    if (profileHydrated) return;
+    return useProfileStore.persist.onFinishHydration(() => setProfileHydrated(true));
+  }, [profileHydrated]);
+  useEffect(() => {
+    if (authHydrated) return;
+    return useAuthStore.persist.onFinishHydration(() => setAuthHydrated(true));
+  }, [authHydrated]);
+  const hydrated = profileHydrated && authHydrated;
 
   // Don't gate the picker itself, and don't gate auth pages.
   const exempt =
@@ -123,7 +130,14 @@ export const router = createBrowserRouter([
       { path: "/search", element: lazyRoute(Search) },
       { path: "/title/:id", element: lazyRoute(TitleDetail) },
       { path: "/title/:titleId/season/:seasonNumber", element: lazyRoute(SeasonPage) },
-      { path: "/watch/:kind/:id", element: lazyRoute(Watch) },
+      // /watch needs auth — anonymous users get redirected to /login with
+      // ?from=/watch/... so they return to playback after login. Previously
+      // anonymous click-Play landed here and surfaced a 401 with no Sign-In
+      // CTA. ProtectedRoute now bounces them cleanly.
+      {
+        path: "/watch/:kind/:id",
+        element: <ProtectedRoute>{lazyRoute(Watch)}</ProtectedRoute>,
+      },
       {
         path: "/subscribe",
         element: <ProtectedRoute>{lazyRoute(Subscribe)}</ProtectedRoute>,

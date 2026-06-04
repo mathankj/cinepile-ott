@@ -18,7 +18,11 @@ export default function TitleEditor() {
 
   const detail = useQuery({
     queryKey: ["admin", "title", titleId],
-    queryFn: () => catalog.detail(titleId!),
+    // Admin-scoped endpoint — returns drafts + scheduled, not just published.
+    // Previously the public catalog.detail() endpoint 404'd on drafts, which
+    // meant the upload + subtitle cards never rendered for a brand-new title
+    // until someone first published it via API. The admin route fixes that.
+    queryFn: () => admin.getTitle(titleId!),
     enabled: !!titleId,
   });
 

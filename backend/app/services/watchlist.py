@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.title import Title
 from app.models.user import User
 from app.models.watchlist import WatchlistItem
+from app.services.browse import invalidate_home_cache
 
 
 class TitleNotFound(Exception):
@@ -34,6 +35,9 @@ async def add(db: AsyncSession, user: User, *, title_id: int) -> tuple[Watchlist
     )
     db.add(row)
     await db.flush()
+    # Bust the user's home cache so the My List row + Recommendations row
+    # update on the next /v1/home request.
+    invalidate_home_cache(user.id)
     return row, True
 
 
@@ -43,6 +47,7 @@ async def remove(db: AsyncSession, user: User, *, title_id: int) -> int:
             WatchlistItem.user_id == user.id, WatchlistItem.title_id == title_id
         )
     )
+    invalidate_home_cache(user.id)
     return res.rowcount or 0
 
 

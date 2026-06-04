@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.reaction import Reaction
 from app.models.title import Title
 from app.models.user import User
+from app.services.browse import invalidate_home_cache
 
 VALID_KINDS = {"thumbs_down", "thumbs_up", "double_thumbs_up"}
 
@@ -37,6 +38,7 @@ async def set_reaction(db: AsyncSession, user: User, *, title_id: int, kind: str
     else:
         row.kind = kind
     await db.flush()
+    invalidate_home_cache(user.id)  # Recommendations row depends on reactions
     return row
 
 
@@ -44,6 +46,7 @@ async def clear_reaction(db: AsyncSession, user: User, *, title_id: int) -> int:
     res = await db.execute(
         delete(Reaction).where(Reaction.user_id == user.id, Reaction.title_id == title_id)
     )
+    invalidate_home_cache(user.id)
     return res.rowcount or 0
 
 

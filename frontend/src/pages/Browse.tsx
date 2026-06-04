@@ -45,9 +45,20 @@ export default function Browse() {
         </h1>
         <div className="flex flex-wrap gap-2">
           <select
+            value={filters.type ?? ""}
+            onChange={(e) => setParam("type", e.target.value || null)}
+            className="rounded border border-white/20 bg-[var(--color-bg-surface)] px-3 py-2 text-sm"
+            aria-label="Title type"
+          >
+            <option value="">All types</option>
+            <option value="movie">Movies</option>
+            <option value="series">TV Shows</option>
+          </select>
+          <select
             value={filters.genre || ""}
             onChange={(e) => setParam("genre", e.target.value || null)}
             className="rounded border border-white/20 bg-[var(--color-bg-surface)] px-3 py-2 text-sm"
+            aria-label="Genre"
           >
             <option value="">All genres</option>
             {genresQ.data?.map((g) => (
@@ -60,6 +71,7 @@ export default function Browse() {
             value={filters.sort}
             onChange={(e) => setParam("sort", e.target.value)}
             className="rounded border border-white/20 bg-[var(--color-bg-surface)] px-3 py-2 text-sm"
+            aria-label="Sort"
           >
             <option value="-published_at">Newest first</option>
             <option value="published_at">Oldest first</option>

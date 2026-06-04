@@ -143,6 +143,16 @@ async def get_title(db: AsyncSession, title_id: int) -> Title:
     return t
 
 
+async def get_title_admin(db: AsyncSession, title_id: int) -> Title:
+    """Admin/content-manager-scoped fetch. Returns drafts and scheduled titles
+    too (everything except soft-deleted). Used by the title editor so admins
+    can manage a title before it's published."""
+    t = await db.get(Title, title_id)
+    if t is None or t.deleted_at is not None:
+        raise TitleNotFound
+    return t
+
+
 async def get_title_by_slug(db: AsyncSession, slug: str) -> Title:
     await auto_promote_scheduled(db)
     t = await db.scalar(

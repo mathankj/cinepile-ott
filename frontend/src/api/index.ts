@@ -196,6 +196,8 @@ export const admin = {
   // Titles
   createTitle: (body: Record<string, unknown>) =>
     api.post<TitleDetail>("/v1/admin/titles", body).then((r) => r.data),
+  getTitle: (id: number) =>
+    api.get<TitleDetail>(`/v1/admin/titles/${id}`).then((r) => r.data),
   updateTitle: (id: number, body: Record<string, unknown>) =>
     api.patch<TitleDetail>(`/v1/admin/titles/${id}`, body).then((r) => r.data),
   publishTitle: (id: number) =>

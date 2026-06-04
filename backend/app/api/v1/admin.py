@@ -72,6 +72,24 @@ async def create_title(
     return _title_to_detail(t)
 
 
+@router.get("/titles/{title_id}", response_model=TitleDetail)
+async def get_title_for_admin(
+    title_id: int, db: DbSession, actor: ContentRoleUser
+) -> TitleDetail:
+    """Admin-scoped title detail. Returns drafts + scheduled titles too — the
+    public /v1/titles/:id endpoint 404s on those, which broke the editor for
+    just-created drafts. With this route the upload + subtitle cards can render
+    for a brand-new draft without requiring publish-first."""
+    from app.api.v1.titles import _title_to_detail
+    from app.services import catalog as catalog_svc
+
+    try:
+        t = await catalog_svc.get_title_admin(db, title_id)
+    except catalog_svc.TitleNotFound as e:
+        raise _err(e, 404) from e
+    return _title_to_detail(t)
+
+
 @router.patch("/titles/{title_id}", response_model=TitleDetail)
 async def update_title(
     title_id: int,
@@ -318,6 +336,27 @@ def _ensure_storage() -> None:
         )
 
 
+def _is_video_container(head: bytes, ext: str) -> bool:
+    """Inspect the first ~32 bytes of an upload to confirm it's actually a
+    known video container — defends against PE/ELF/script payloads renamed
+    with a video extension.
+
+    Recognises:
+      - ISO BMFF (MP4 / MOV / M4V): bytes 4-8 == 'ftyp'
+      - WebM / Matroska: starts with EBML header 1A 45 DF A3
+    Other formats fall through and are rejected.
+    """
+    if len(head) < 8:
+        return False
+    # ISO BMFF — first 4 bytes are the box size (any value), bytes 4-8 are "ftyp"
+    if head[4:8] == b"ftyp":
+        return True
+    # EBML / WebM / Matroska
+    if head.startswith(b"\x1a\x45\xdf\xa3"):
+        return ext in {".webm"}
+    return False
+
+
 def _raw_ext(filename: str | None) -> str:
     """Strict extension lookup — returns raw ext or empty string.
     Differs from _ext_of (which coerces to .mp4 for storage-key safety).
@@ -331,7 +370,12 @@ def _raw_ext(filename: str | None) -> str:
 
 
 def _validate_upload(file) -> None:
-    """Sniff filename + content-type. Cheap rejection of clearly-wrong uploads."""
+    """Sniff filename + content-type + first 32 bytes. The byte sniff is the
+    defense-in-depth check — a malicious upload with a `.mp4` filename and
+    a fake `video/mp4` content-type but PE/ELF/script bytes inside would pass
+    the first two checks. We peek the head, validate it's a known video
+    container, then rewind the stream so the actual upload reads from byte 0.
+    """
     ext = _raw_ext(file.filename)
     if not ext or ext not in _ALLOWED_VIDEO_EXTS:
         raise HTTPException(
@@ -343,6 +387,36 @@ def _validate_upload(file) -> None:
                 }
             },
         )
+
+    # Magic-byte sniff (32 bytes covers every container we accept).
+    # Skip for .m3u8 (a manifest is plain text starting with #EXTM3U).
+    if ext != ".m3u8":
+        head = file.file.read(32)
+        file.file.seek(0)
+        if not _is_video_container(head, ext):
+            raise HTTPException(
+                415,
+                detail={
+                    "error": {
+                        "code": "content_mismatch",
+                        "message": "File contents don't match a recognised video container. Magic bytes failed validation.",
+                    }
+                },
+            )
+    else:
+        head = file.file.read(8)
+        file.file.seek(0)
+        if not head.startswith(b"#EXTM3U"):
+            raise HTTPException(
+                415,
+                detail={
+                    "error": {
+                        "code": "content_mismatch",
+                        "message": "File doesn't look like an HLS manifest (#EXTM3U missing).",
+                    }
+                },
+            )
+
     if file.content_type and file.content_type not in _ALLOWED_VIDEO_MIMES:
         raise HTTPException(
             415,
@@ -353,6 +427,53 @@ def _validate_upload(file) -> None:
                 }
             },
         )
+
+
+async def _safe_upload(
+    *, key: str, file_obj: "_SizeLimitedStream", content_type: str
+) -> str:
+    """Wraps storage_svc.aupload_fileobj so an `_UploadTooLarge` raised inside
+    the boto3 worker thread surfaces as an HTTP 413 instead of a 500. boto3
+    wraps the inner exception in S3UploadFailedError — we unwrap and check."""
+    try:
+        return await storage_svc.aupload_fileobj(
+            key=key, file_obj=file_obj, content_type=content_type
+        )
+    except _UploadTooLarge as exc:
+        raise HTTPException(
+            413,
+            detail={
+                "error": {
+                    "code": "payload_too_large",
+                    "message": f"Upload exceeds the {exc.limit_bytes // (1024 * 1024)} MB limit.",
+                }
+            },
+        ) from exc
+    except Exception as exc:
+        # boto3's S3UploadFailedError carries the original exception in .args
+        for arg in getattr(exc, "args", ()):
+            if isinstance(arg, _UploadTooLarge):
+                raise HTTPException(
+                    413,
+                    detail={
+                        "error": {
+                            "code": "payload_too_large",
+                            "message": f"Upload exceeds the {arg.limit_bytes // (1024 * 1024)} MB limit.",
+                        }
+                    },
+                ) from exc
+        raise
+
+
+class _UploadTooLarge(Exception):
+    """Raised mid-stream when an upload exceeds its byte cap. We raise a plain
+    Python exception (not HTTPException) because boto3.upload_fileobj reads the
+    stream inside a worker thread — an HTTPException there gets wrapped by
+    botocore and surfaces as a generic 500 instead of the 413 we want.
+    The route handler catches this and emits the right HTTP response."""
+
+    def __init__(self, limit_bytes: int):
+        self.limit_bytes = limit_bytes
 
 
 class _SizeLimitedStream:
@@ -371,15 +492,7 @@ class _SizeLimitedStream:
             return chunk
         self._read += len(chunk)
         if self._read > self._max:
-            raise HTTPException(
-                413,
-                detail={
-                    "error": {
-                        "code": "payload_too_large",
-                        "message": f"Upload exceeds the {_MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.",
-                    }
-                },
-            )
+            raise _UploadTooLarge(self._max)
         return chunk
 
     # boto3 may also call .seek / .tell / .close on the stream (it does for
@@ -426,7 +539,7 @@ async def upload_title_video(
     _validate_upload(file)
     # Stream into storage with a hard size limit (raises 413 mid-stream if exceeded).
     key = f"titles/{title_id}/master{_ext_of(file.filename)}"
-    stored_ref = await storage_svc.aupload_fileobj(
+    stored_ref = await _safe_upload(
         key=key,
         file_obj=_SizeLimitedStream(file.file, _MAX_UPLOAD_BYTES),
         content_type=file.content_type or "video/mp4",
@@ -475,7 +588,7 @@ async def upload_episode_video(
 
     _validate_upload(file)
     key = f"episodes/{episode_id}/master{_ext_of(file.filename)}"
-    stored_ref = await storage_svc.aupload_fileobj(
+    stored_ref = await _safe_upload(
         key=key,
         file_obj=_SizeLimitedStream(file.file, _MAX_UPLOAD_BYTES),
         content_type=file.content_type or "video/mp4",
@@ -578,7 +691,7 @@ async def _store_subtitle(
     owner_kind = "titles" if title_id is not None else "episodes"
     owner_id = title_id if title_id is not None else episode_id
     key = f"{owner_kind}/{owner_id}/subtitles/{language}.vtt"
-    stored_ref = await storage_svc.aupload_fileobj(
+    stored_ref = await _safe_upload(
         key=key,
         file_obj=_SizeLimitedStream(file.file, _MAX_SUBTITLE_BYTES),
         content_type="text/vtt",

@@ -18,6 +18,8 @@ Order of returned rows is fixed for V1.5. Per-user row selection is V2.
 """
 from __future__ import annotations
 
+import asyncio
+import time
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import String, and_, func, select
@@ -30,6 +32,28 @@ from app.models.user import User
 from app.models.watchlist import WatchlistItem
 from app.models.watch_progress import WatchProgress
 from app.services import history as history_svc
+
+
+# Per-process TTL cache for /v1/home. Each entry is keyed by
+# (user_id_or_none, country) and holds (rows, expires_at). On a cold Neon
+# connection the home page does 5-10 sequential round trips that add up to
+# 15-30 s — caching for 60 s means the first visit pays once and every
+# subsequent visit by anyone (or by the same user+country) is sub-100 ms.
+# This is the same trick Netflix uses (their home is cached server-side too).
+_HOME_CACHE: dict[tuple[int | None, str | None], tuple[list[dict], float]] = {}
+_HOME_CACHE_TTL_SECONDS = 60
+_HOME_CACHE_LOCK = asyncio.Lock()  # avoid stampede when many requests miss simultaneously
+
+
+def invalidate_home_cache(user_id: int | None = None) -> None:
+    """Drops cache entries — call after writes that change what a user sees on
+    home (e.g. add-to-list, reaction, finish watching). When user_id is None,
+    drops EVERYTHING (use after admin publish/unpublish)."""
+    if user_id is None:
+        _HOME_CACHE.clear()
+        return
+    for key in [k for k in _HOME_CACHE if k[0] == user_id]:
+        _HOME_CACHE.pop(key, None)
 
 
 ROW_DEFAULT_CAP = 20
@@ -150,12 +174,16 @@ async def recommended_for_you(
     to globally popular content. This deliberately under-reports rather than
     hallucinate a recommendation when we have nothing to base it on.
     """
-    # Collect seed title IDs from reactions (up=like), watchlist, watch_progress
+    # Seed IDs from positive reactions, watchlist, and watch progress. Valid
+    # reaction kinds are thumbs_down / thumbs_up / double_thumbs_up — there is
+    # no "like" kind (that was a bug; we now correctly include both positive
+    # signals).
     liked_ids = list(
         (
             await db.scalars(
                 select(Reaction.title_id).where(
-                    Reaction.user_id == user.id, Reaction.kind == "like"
+                    Reaction.user_id == user.id,
+                    Reaction.kind.in_(("thumbs_up", "double_thumbs_up")),
                 )
             )
         ).all()
@@ -227,7 +255,32 @@ async def build_home(
     *,
     country: str | None = None,
 ) -> list[dict]:
-    """Returns a list of dicts: [{kind, title, items: [Title]}, ...]"""
+    """Returns a list of dicts: [{kind, title, items: [Title]}, ...]
+
+    Cached per (user_id, country) for 60 s. The lock prevents thundering-herd
+    rebuilds when many requests miss the cache simultaneously."""
+    cache_key = (user.id if user else None, country)
+    now = time.monotonic()
+    cached = _HOME_CACHE.get(cache_key)
+    if cached and cached[1] > now:
+        return cached[0]
+
+    async with _HOME_CACHE_LOCK:
+        # Double-check: someone may have populated it while we waited on the lock.
+        cached = _HOME_CACHE.get(cache_key)
+        if cached and cached[1] > time.monotonic():
+            return cached[0]
+        rows = await _build_home_uncached(db, user, country=country)
+        _HOME_CACHE[cache_key] = (rows, time.monotonic() + _HOME_CACHE_TTL_SECONDS)
+        return rows
+
+
+async def _build_home_uncached(
+    db: AsyncSession,
+    user: User | None,
+    *,
+    country: str | None = None,
+) -> list[dict]:
     rows: list[dict] = []
 
     if user is not None:

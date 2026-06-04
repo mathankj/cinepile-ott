@@ -64,11 +64,33 @@ api.interceptors.response.use(
   }
 );
 
-/** Convenience: extract a clean error message from our backend's error envelope. */
+/** Convenience: extract a clean error message from our backend's error envelope.
+ *
+ * Handles three shapes:
+ *   1. Our explicit error envelope:   { detail: { error: { message } } }
+ *   2. FastAPI validation 422:        { detail: [{loc, msg, type}] }
+ *      → pick the first user-friendly msg
+ *   3. Anything else                  → axios message → fallback
+ */
 export function apiErrorMessage(err: unknown, fallback = "Something went wrong"): string {
   if (axios.isAxiosError(err)) {
-    const body = err.response?.data as { detail?: { error?: { message?: string } } } | undefined;
-    return body?.detail?.error?.message ?? err.message ?? fallback;
+    const data = err.response?.data;
+    // Shape 1: our error envelope
+    const enveloped = (data as { detail?: { error?: { message?: string } } } | undefined)?.detail
+      ?.error?.message;
+    if (enveloped) return enveloped;
+    // Shape 2: FastAPI 422 — array of validation errors
+    const detail = (data as { detail?: unknown } | undefined)?.detail;
+    if (Array.isArray(detail) && detail.length > 0) {
+      const first = detail[0] as { msg?: string; loc?: unknown[] };
+      if (first.msg) {
+        const field = Array.isArray(first.loc) ? String(first.loc.at(-1) ?? "") : "";
+        // "value_error, value is not a valid email address" → "Please enter a valid email address."
+        const friendly = first.msg.replace(/^value_error,?\s*/i, "").replace(/^Value error,?\s*/i, "");
+        return field ? `${field}: ${friendly}` : friendly;
+      }
+    }
+    return err.message ?? fallback;
   }
   return fallback;
 }

@@ -51,6 +51,14 @@ async def _ensure_episode_playable(
     return ep, season, title
 
 
+def _bust_home(user_id: int) -> None:
+    """Lazy import to avoid a circular dep: browse imports from history, so
+    history can't import browse at module load."""
+    from app.services.browse import invalidate_home_cache
+
+    invalidate_home_cache(user_id)
+
+
 async def upsert_movie_progress(
     db: AsyncSession, user: User, *, title_id: int, position_sec: int, total_sec: int
 ) -> WatchProgress:
@@ -85,6 +93,7 @@ async def upsert_movie_progress(
         # Un-hide on resume — if the user comes back to watch, surface it again
         row.hidden_from_continue = False
     await db.flush()
+    _bust_home(user.id)  # Continue-Watching row depends on this
     return row
 
 
@@ -122,6 +131,7 @@ async def upsert_episode_progress(
         # Un-hide on resume — if the user comes back to watch, surface it again
         row.hidden_from_continue = False
     await db.flush()
+    _bust_home(user.id)  # Continue-Watching row depends on this
     return row
 
 

@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Play, Plus, Info } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
-import { catalog } from "../../api";
+import { Play, Plus, Info, Check } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { catalog, me } from "../../api";
 import type { TitleSummary } from "../../api/types";
+import { useAuthStore } from "../../stores/auth";
 
 /**
  * Single-title card — landscape 16:9.
@@ -34,9 +35,31 @@ export function TitleCard({
   progressPercent?: number;
 }) {
   const qc = useQueryClient();
+  const nav = useNavigate();
+  const isLoggedIn = useAuthStore((s) => !!s.accessToken);
   const imgUrl = title.backdrop_url || title.poster_url;
   const [imgFailed, setImgFailed] = useState(false);
   const showImage = imgUrl && !imgFailed;
+
+  // Watchlist state — only fetched when the user is logged in. The card uses
+  // it to flip the "+" icon to a "✓" when the title is already on the list.
+  const watchlistQ = useQuery({
+    queryKey: ["watchlist"],
+    queryFn: () => me.listWatchlist(),
+    enabled: isLoggedIn,
+    staleTime: 30_000,
+  });
+  const onList =
+    !!watchlistQ.data?.items.some((w) => w.title.id === title.id);
+
+  const addToList = useMutation({
+    mutationFn: () => me.addToList(title.id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["watchlist"] }),
+  });
+  const removeFromList = useMutation({
+    mutationFn: () => me.removeFromList(title.id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["watchlist"] }),
+  });
 
   // Prefetch detail on hover — runs at most once per card per session because
   // TanStack Query dedupes via the queryKey.
@@ -46,6 +69,31 @@ export function TitleCard({
       queryFn: () => catalog.detail(title.id),
       staleTime: 60_000,
     });
+  }
+
+  // Hover-overlay button handlers. Each one stops propagation so the outer
+  // Link's navigation doesn't fire on the same click.
+  function onPlayClick(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    // Series go to detail (where the user picks an episode); movies go straight
+    // to /watch. /watch is auth-protected so anonymous → /login redirect.
+    nav(title.type === "series" ? `/title/${title.id}` : `/watch/title/${title.id}`);
+  }
+  function onListClick(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isLoggedIn) {
+      nav("/login", { state: { from: `/title/${title.id}` } });
+      return;
+    }
+    if (onList) removeFromList.mutate();
+    else addToList.mutate();
+  }
+  function onInfoClick(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    nav(`/title/${title.id}`);
   }
 
   return (
@@ -87,10 +135,14 @@ export function TitleCard({
           </div>
         </div>
 
-        {/* Hover reveal — Netflix mini-card. Fades in with a slight delay so quick
-            mouse-overs (scrolling past the row) don't flash. */}
+        {/* Hover reveal — Netflix mini-card. Fades in with a slight delay so
+            quick mouse-overs (scrolling past the row) don't flash. Also
+            triggers on keyboard focus inside the card (group-focus-within)
+            so Tab users can reach the actions. Suppressed on touch via
+            `@media (hover: none)` — the .hover-reveal class is wrapped in
+            a hover-only block in index.css. */}
         <div
-          className="hover-reveal pointer-events-none absolute inset-0 flex flex-col justify-between bg-gradient-to-t from-black/95 via-black/60 to-transparent p-3 opacity-0 transition-opacity duration-200 ease-out group-hover/card:pointer-events-auto group-hover/card:opacity-100 group-hover/card:delay-[400ms]"
+          className="hover-reveal pointer-events-none absolute inset-0 flex flex-col justify-between bg-gradient-to-t from-black/95 via-black/60 to-transparent p-3 opacity-0 transition-opacity duration-200 ease-out group-hover/card:pointer-events-auto group-hover/card:opacity-100 group-hover/card:delay-[400ms] group-focus-within/card:pointer-events-auto group-focus-within/card:opacity-100"
         >
           <div className="flex justify-end">
             {title.is_free && (
@@ -110,13 +162,17 @@ export function TitleCard({
               <span className="uppercase tracking-wider">{title.type}</span>
             </div>
             <div className="mt-2 flex items-center gap-1.5">
-              <CardActionButton ariaLabel="Play" filled>
+              <CardActionButton ariaLabel="Play" filled onClick={onPlayClick}>
                 <Play size={14} className="fill-current" />
               </CardActionButton>
-              <CardActionButton ariaLabel="Add to my list">
-                <Plus size={14} />
+              <CardActionButton
+                ariaLabel={onList ? "Remove from my list" : "Add to my list"}
+                onClick={onListClick}
+                pending={addToList.isPending || removeFromList.isPending}
+              >
+                {onList ? <Check size={14} /> : <Plus size={14} />}
               </CardActionButton>
-              <CardActionButton ariaLabel="More info">
+              <CardActionButton ariaLabel="More info" onClick={onInfoClick}>
                 <Info size={14} />
               </CardActionButton>
             </div>
@@ -153,17 +209,22 @@ function CardActionButton({
   children,
   filled = false,
   ariaLabel,
+  onClick,
+  pending = false,
 }: {
   children: React.ReactNode;
   filled?: boolean;
   ariaLabel: string;
+  onClick: (e: React.MouseEvent) => void;
+  pending?: boolean;
 }) {
   return (
     <button
       type="button"
       aria-label={ariaLabel}
-      onClick={(e) => e.stopPropagation()}
-      className={`grid h-7 w-7 place-items-center rounded-full transition-colors ${
+      onClick={onClick}
+      disabled={pending}
+      className={`grid h-7 w-7 place-items-center rounded-full transition-colors disabled:opacity-50 ${
         filled
           ? "bg-white text-black hover:bg-white/85"
           : "border border-white/60 text-white hover:border-white hover:bg-white/10"
