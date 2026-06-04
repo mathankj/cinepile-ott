@@ -313,6 +313,10 @@ async def _upsert_movie(s, data):
             countries=data["countries"],
             poster_url=data["poster_url"],
             backdrop_url=data.get("backdrop_url"),
+            # Same HLS stream used as a placeholder trailer for dev — lets the
+            # "Watch Trailer" button on title detail surface. Real launches
+            # would point this at a per-title trailer URL.
+            trailer_url=data.get("trailer_url", data["hls"]),
             status="published",
             published_at=datetime.now(tz=timezone.utc),
         )
@@ -327,6 +331,7 @@ async def _upsert_movie(s, data):
     else:
         # Refresh image URLs on every seed run so dev environments stay consistent
         # even if the upstream URL pattern changes.
+        t.trailer_url = data.get("trailer_url", data["hls"])
         t.poster_url = data["poster_url"]
         t.backdrop_url = data.get("backdrop_url")
     return t
@@ -348,6 +353,7 @@ async def _upsert_series(s, data):
             countries=data["countries"],
             poster_url=data.get("poster_url"),
             backdrop_url=data.get("backdrop_url"),
+            trailer_url=data.get("trailer_url", PLACEHOLDER_EPISODE_HLS),
             status="published",
             published_at=datetime.now(tz=timezone.utc),
         )
@@ -397,6 +403,7 @@ async def _upsert_series(s, data):
         t.poster_url = data.get("poster_url")
         t.backdrop_url = data.get("backdrop_url")
         t.series_type = data.get("series_type")
+        t.trailer_url = data.get("trailer_url", PLACEHOLDER_EPISODE_HLS)
     return t
 
 

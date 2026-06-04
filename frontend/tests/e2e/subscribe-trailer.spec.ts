@@ -63,11 +63,12 @@ test.describe("Subscribe flow", () => {
 });
 
 test.describe("Trailer playback", () => {
-  test("title without configured trailer hides the Watch Trailer button", async ({ page }) => {
-    // Seed titles don't have trailer_url set — the button should not appear.
+  test("title with configured trailer shows Watch Trailer button", async ({ page }) => {
+    // Seed now populates trailer_url with a placeholder stream so the
+    // "Watch Trailer" button can demo. Real launches replace per-title.
     await page.goto("/title/1");
     await expect(page.locator("h1").first()).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator('a:has-text("Watch Trailer")')).toHaveCount(0);
+    await expect(page.locator('a:has-text("Watch Trailer")').first()).toBeVisible();
   });
 
   test("anonymous user can browse to a title detail page (trailer-eligible UX)", async ({ page }) => {

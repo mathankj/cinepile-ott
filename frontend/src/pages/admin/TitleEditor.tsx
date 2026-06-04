@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Upload as UploadIcon } from "lucide-react";
-import { admin, catalog } from "../../api";
+import { admin } from "../../api";
 import { apiErrorMessage } from "../../api/client";
 
 /**

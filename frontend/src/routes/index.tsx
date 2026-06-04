@@ -118,6 +118,14 @@ export const router = createBrowserRouter([
     path: "/profiles",
     element: <ProtectedRoute>{lazyRoute(ProfilesPage)}</ProtectedRoute>,
   },
+  // /watch — full-bleed, no nav/footer chrome (Netflix-style). The page's
+  // own back button handles navigation. Previously this lived inside
+  // AppLayout, which caused the footer to bleed under the player/loading
+  // state because <main> was sandwiched between Navbar + Footer.
+  {
+    path: "/watch/:kind/:id",
+    element: <ProtectedRoute>{lazyRoute(Watch)}</ProtectedRoute>,
+  },
   {
     element: (
       <ProfileGate>
@@ -130,14 +138,6 @@ export const router = createBrowserRouter([
       { path: "/search", element: lazyRoute(Search) },
       { path: "/title/:id", element: lazyRoute(TitleDetail) },
       { path: "/title/:titleId/season/:seasonNumber", element: lazyRoute(SeasonPage) },
-      // /watch needs auth — anonymous users get redirected to /login with
-      // ?from=/watch/... so they return to playback after login. Previously
-      // anonymous click-Play landed here and surfaced a 401 with no Sign-In
-      // CTA. ProtectedRoute now bounces them cleanly.
-      {
-        path: "/watch/:kind/:id",
-        element: <ProtectedRoute>{lazyRoute(Watch)}</ProtectedRoute>,
-      },
       {
         path: "/subscribe",
         element: <ProtectedRoute>{lazyRoute(Subscribe)}</ProtectedRoute>,
