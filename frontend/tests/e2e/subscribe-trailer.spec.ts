@@ -134,7 +134,7 @@ test.describe("Edge cases", () => {
   test("non-existent title id renders a 404-ish empty state, not a crash", async ({ page }) => {
     await page.goto("/title/99999");
     // Page should at least render the AppLayout (no JS crash)
-    await expect(page.locator("text=ANJANEYA").first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator("text=CINEPILE").first()).toBeVisible({ timeout: 10_000 });
     // We don't crash; the detail content area shows nothing or an error message
     // (We're not strict about the exact copy — just that the page loads.)
   });

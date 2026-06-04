@@ -6,12 +6,31 @@ import io
 import pytest
 
 
+# Valid ISO BMFF (MP4) ftyp box header — 32 bytes. The upload validator sniffs
+# bytes 4-8 for `ftyp` to confirm the file is actually a video container, so
+# every fake_mp4 body in this module needs to lead with this header (real video
+# data isn't required since storage is mocked).
+_FTYP = (
+    b"\x00\x00\x00\x20"      # box size = 32
+    b"ftyp"                  # box type
+    b"isom\x00\x00\x02\x00"  # major brand + minor version
+    b"isomiso2avc1mp41"      # compatible brands
+)
+
+
+def _mp4(body: bytes = b"") -> io.BytesIO:
+    """Returns a BytesIO with a valid ftyp header + arbitrary payload bytes
+    sized to whatever the test wants. Used so the byte-sniff validator passes
+    without each test having to know about the header layout."""
+    return io.BytesIO(_FTYP + body)
+
+
 @pytest.mark.asyncio
 async def test_upload_disabled_when_storage_unconfigured(admin_client, make_title) -> None:
     """Without STORAGE_* env vars, uploads return 503 instead of crashing."""
     client, _, _ = admin_client
     t = await make_title(slug="m")
-    fake_mp4 = io.BytesIO(b"fakebytes" * 100)
+    fake_mp4 = _mp4(b"fakebytes" * 100)
     resp = await client.post(
         f"/v1/admin/titles/{t.id}/upload-video",
         files={"file": ("test.mp4", fake_mp4, "video/mp4")},
@@ -27,7 +46,7 @@ async def test_upload_disabled_when_storage_unconfigured(admin_client, make_titl
 async def test_upload_title_public_returns_url(storage_mock, admin_client, make_title) -> None:
     client, _, _ = admin_client
     t = await make_title(slug="m", hls_url=None)
-    fake_mp4 = io.BytesIO(b"fakebytes" * 500)
+    fake_mp4 = _mp4(b"fakebytes" * 500)
     resp = await client.post(
         f"/v1/admin/titles/{t.id}/upload-video",
         files={"file": ("bunny.mp4", fake_mp4, "video/mp4")},
@@ -54,7 +73,7 @@ async def test_upload_title_private_stores_key_not_url(
 ) -> None:
     client, _, _ = admin_client
     t = await make_title(slug="m", hls_url=None)
-    fake_mp4 = io.BytesIO(b"fakebytes" * 500)
+    fake_mp4 = _mp4(b"fakebytes" * 500)
     resp = await client.post(
         f"/v1/admin/titles/{t.id}/upload-video",
         files={"file": ("bunny.mp4", fake_mp4, "video/mp4")},
@@ -94,7 +113,7 @@ async def test_play_private_uploaded_movie_gets_signed_url(
         "/v1/auth/login", json={"email": "admin@x.com", "password": "password123"}
     )
     client.headers["Authorization"] = f"Bearer {admin_login.json()['tokens']['access_token']}"
-    fake = io.BytesIO(b"x" * 100)
+    fake = _mp4(b"x" * 100)
     upload_resp = await client.post(
         f"/v1/admin/titles/{t.id}/upload-video",
         files={"file": ("x.mp4", fake, "video/mp4")},
@@ -123,7 +142,7 @@ async def test_upload_replaces_existing_asset(storage_mock, admin_client, make_t
     client, _, _ = admin_client
     t = await make_title(slug="m", hls_url="https://old.example/old.m3u8")
 
-    fake_mp4 = io.BytesIO(b"newbytes" * 200)
+    fake_mp4 = _mp4(b"newbytes" * 200)
     resp = await client.post(
         f"/v1/admin/titles/{t.id}/upload-video",
         files={"file": ("new.mp4", fake_mp4, "video/mp4")},
@@ -158,7 +177,7 @@ async def test_upload_episode_video(storage_mock, admin_client, make_series_with
     season = (await client.get(f"/v1/titles/{s.id}/seasons/1")).json()
     ep_id = season["episodes"][0]["id"]
 
-    fake = io.BytesIO(b"epbytes" * 300)
+    fake = _mp4(b"epbytes" * 300)
     resp = await client.post(
         f"/v1/admin/episodes/{ep_id}/upload-video",
         files={"file": ("s1e1.mp4", fake, "video/mp4")},
@@ -183,7 +202,7 @@ async def test_upload_requires_content_role(storage_mock, auth_client, make_titl
 async def test_upload_writes_audit_log(storage_mock, admin_client, make_title) -> None:
     client, _, _ = admin_client
     t = await make_title(slug="m", hls_url=None)
-    fake = io.BytesIO(b"x" * 100)
+    fake = _mp4(b"x" * 100)
     await client.post(
         f"/v1/admin/titles/{t.id}/upload-video", files={"file": ("x.mp4", fake, "video/mp4")}
     )

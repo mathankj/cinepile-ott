@@ -21,7 +21,7 @@ _PAGE = """<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Anjaneya OTT — Test Checkout</title>
+  <title>CinePile — Test Checkout</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; max-width: 520px; margin: 60px auto; padding: 0 16px; color: #111; }
@@ -42,7 +42,7 @@ _PAGE = """<!doctype html>
 </head>
 <body>
   <div class="card">
-    <h1>Anjaneya OTT — Test Checkout</h1>
+    <h1>CinePile — Test Checkout</h1>
     <p>Razorpay one-time payment for one billing period.</p>
     <div id="summary"></div>
     <button id="pay">Pay now</button>
@@ -59,7 +59,7 @@ _PAGE = """<!doctype html>
     const key_id = qs.get('key_id');
     const amount = qs.get('amount');
     const currency = qs.get('currency') || 'INR';
-    const name = qs.get('name') || 'Anjaneya OTT';
+    const name = qs.get('name') || 'CinePile';
     const description = qs.get('description') || 'Subscription';
     const access_token = qs.get('token'); // backend access token, passed for the verify call
 

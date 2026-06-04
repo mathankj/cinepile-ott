@@ -6,6 +6,17 @@ import io
 import pytest
 
 
+# Valid ISO BMFF (MP4) ftyp box header — 32 bytes. The upload validator sniffs
+# bytes 4-8 for `ftyp`; without this prefix any test would 415 on content-mismatch
+# before reaching the actual code path under test.
+_FTYP = (
+    b"\x00\x00\x00\x20"
+    b"ftyp"
+    b"isom\x00\x00\x02\x00"
+    b"isomiso2avc1mp41"
+)
+
+
 @pytest.mark.asyncio
 async def test_upload_rejects_oversize_file(
     storage_mock_private, admin_client, make_title, monkeypatch
@@ -18,7 +29,7 @@ async def test_upload_rejects_oversize_file(
 
     client, _, _ = admin_client
     t = await make_title(slug="m", hls_url=None)
-    big = io.BytesIO(b"x" * 10_000)  # 10 KB > 1 KB limit
+    big = io.BytesIO(_FTYP + b"x" * 10_000)  # 10 KB > 1 KB limit
     resp = await client.post(
         f"/v1/admin/titles/{t.id}/upload-video",
         files={"file": ("big.mp4", big, "video/mp4")},
@@ -63,7 +74,7 @@ async def test_upload_accepts_mp4(storage_mock_private, admin_client, make_title
     """Sanity — valid uploads still work."""
     client, _, _ = admin_client
     t = await make_title(slug="m", hls_url=None)
-    fake = io.BytesIO(b"x" * 100)
+    fake = io.BytesIO(_FTYP + b"x" * 100)
     resp = await client.post(
         f"/v1/admin/titles/{t.id}/upload-video",
         files={"file": ("real.mp4", fake, "video/mp4")},

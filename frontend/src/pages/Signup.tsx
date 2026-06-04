@@ -34,7 +34,7 @@ export default function Signup() {
       title="Create your account"
       footer={
         <span>
-          Already on Anjaneya?{" "}
+          Already on CinePile?{" "}
           <Link to="/login" className="text-white hover:underline">
             Sign in
           </Link>

@@ -30,4 +30,4 @@ async def test_openapi_is_served(client: AsyncClient) -> None:
     resp = await client.get("/openapi.json")
     assert resp.status_code == 200
     schema = resp.json()
-    assert schema["info"]["title"] == "Anjaneya OTT API"
+    assert schema["info"]["title"] == "CinePile API"

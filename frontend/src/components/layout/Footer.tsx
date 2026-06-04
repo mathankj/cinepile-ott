@@ -29,7 +29,7 @@ export default function Footer() {
             <li><Link to="#" className="hover:underline">Contact Us</Link></li>
           </ul>
         </div>
-        <div className="mt-10 text-xs">© 2026 Anjaneya OTT</div>
+        <div className="mt-10 text-xs">© 2026 CinePile</div>
       </div>
     </footer>
   );

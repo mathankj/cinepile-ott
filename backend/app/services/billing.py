@@ -252,7 +252,7 @@ async def _subscribe_razorpay_orders(db: AsyncSession, user: User, plan: Plan) -
         "key_id": settings.razorpay_key_id or "",
         "amount": plan.price_cents,
         "currency": plan.currency,
-        "name": "Anjaneya OTT",
+        "name": "CinePile",
         "description": plan.name,
     }
     sub.checkout_url = f"/test-checkout?{urlencode(params)}"

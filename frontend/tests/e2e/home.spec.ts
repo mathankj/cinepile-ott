@@ -7,7 +7,7 @@ test.describe("Home page", () => {
     await waitForHomeContent(page);
 
     // Brand logo
-    await expect(page.locator("text=ANJANEYA").first()).toBeVisible();
+    await expect(page.locator("text=CINEPILE").first()).toBeVisible();
 
     // The desktop navbar's Sign In CTA is hidden on mobile (replaced by the
     // hamburger drawer). Check it only in the desktop project.

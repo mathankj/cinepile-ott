@@ -25,7 +25,7 @@ export default function AuthShell({
       {/* Background — large landscape image with heavy dark overlay so foreground
           text is always WCAG-AA legible regardless of which picsum seed loads. */}
       <img
-        src="https://picsum.photos/seed/anjaneya-auth-hero/1920/1080"
+        src="https://picsum.photos/seed/cinepile-auth-hero/1920/1080"
         alt=""
         aria-hidden="true"
         className="absolute inset-0 h-full w-full object-cover opacity-50"
@@ -40,9 +40,9 @@ export default function AuthShell({
 
       {/* Top bar — only the brand. No nav, no profile menu. */}
       <header className="relative z-10 px-4 md:px-8 lg:px-[60px] py-5">
-        <Link to="/" aria-label="Anjaneya home" className="inline-block">
+        <Link to="/" aria-label="CinePile home" className="inline-block">
           <span className="text-[1.6rem] md:text-[2rem] font-extrabold tracking-tight text-[var(--color-brand)]">
-            ANJANEYA
+            CINEPILE
           </span>
         </Link>
       </header>

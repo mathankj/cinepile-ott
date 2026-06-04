@@ -52,9 +52,9 @@ def create_app() -> FastAPI:
     settings = get_settings()
 
     app = FastAPI(
-        title="Anjaneya OTT API",
+        title="CinePile API",
         version=settings.app_version,
-        description="Production backend for the Anjaneya OTT platform.",
+        description="Production backend for the CinePile streaming platform.",
         lifespan=lifespan,
         # Serve docs only outside prod by default; flip to True if you want them in prod too
         docs_url="/docs" if settings.app_env != "prod" else None,

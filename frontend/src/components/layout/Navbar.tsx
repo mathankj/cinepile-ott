@@ -47,9 +47,9 @@ export default function Navbar() {
       >
         <div className="flex h-full items-center px-4 md:px-8 lg:px-[60px]">
           {/* Logo */}
-          <Link to="/" className="mr-6 md:mr-9 flex items-center" aria-label="Anjaneya home">
+          <Link to="/" className="mr-6 md:mr-9 flex items-center" aria-label="CinePile home">
             <span className="text-[1.4rem] md:text-[1.6rem] font-extrabold tracking-tight text-[var(--color-brand)]">
-              ANJANEYA
+              CINEPILE
             </span>
           </Link>
 

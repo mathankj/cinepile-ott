@@ -189,8 +189,13 @@ MOVIES = [
 ]
 
 SERIES = {
+    # Original demo title was "The Anjaneya Chronicles" — renamed during the
+    # CinePile rebrand. We keep the OLD slug as a backwards-compat alias so
+    # any in-flight test references to /title-by-slug/the-anjaneya-chronicles
+    # don't break; the upsert key is the slug, so changing it would orphan
+    # the existing row. Title text is the user-visible change.
     "slug": "the-anjaneya-chronicles",
-    "title": "The Anjaneya Chronicles",
+    "title": "The Veilbearer Chronicles",
     "synopsis": "A sweeping anthology of stories from across the ages.",
     "release_year": 2024,
     "age_rating": "U/A",
@@ -400,6 +405,10 @@ async def _upsert_series(s, data):
         # Refresh stable fields on every seed run so dev DBs stay consistent
         # with the script. (series_type is enum-constrained in the schema, so
         # an out-of-range value would 500 on detail — keep this in sync.)
+        # Display title is also refreshed so rebrands (e.g. Anjeya→CinePile)
+        # land without needing a manual DB update.
+        t.title = data["title"]
+        t.synopsis = data["synopsis"]
         t.poster_url = data.get("poster_url")
         t.backdrop_url = data.get("backdrop_url")
         t.series_type = data.get("series_type")
