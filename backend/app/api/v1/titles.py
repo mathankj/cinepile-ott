@@ -40,6 +40,25 @@ def _title_to_detail(t) -> TitleDetail:
     return TitleDetail.model_validate(t).model_copy(update={"seasons": season_summaries})
 
 
+import time
+
+# In-process TTL cache for the public catalog list endpoint. Same pattern as
+# the home-page cache in browse.py — Neon free-tier cold-start makes a fresh
+# query take 5-30 s, so users navigating between Movies/TV Shows/genre
+# filters were watching "Loading…" stay on screen forever. Cached values
+# are invalidated by admin writes (publish/archive/delete) — see
+# invalidate_titles_cache() at the bottom of this file.
+_TITLES_CACHE: dict[tuple, tuple[dict, float]] = {}
+_TITLES_CACHE_TTL_SECONDS = 60
+
+
+def invalidate_titles_cache() -> None:
+    """Drop ALL list responses. Called from admin endpoints that mutate the
+    catalog (publish, archive, delete, create) so admins don't see stale data
+    immediately after a write."""
+    _TITLES_CACHE.clear()
+
+
 @router.get("", response_model=TitleListResponse)
 async def list_titles(
     db: DbSession,
@@ -57,6 +76,12 @@ async def list_titles(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ) -> TitleListResponse:
+    cache_key = (type, genre, language, country, year_from, year_to, sort, page, page_size)
+    now = time.monotonic()
+    cached = _TITLES_CACHE.get(cache_key)
+    if cached and cached[1] > now:
+        return TitleListResponse.model_validate(cached[0])
+
     items, total = await catalog.list_titles(
         db,
         type_=type,
@@ -69,12 +94,14 @@ async def list_titles(
         page=page,
         page_size=page_size,
     )
-    return TitleListResponse(
+    response = TitleListResponse(
         items=[TitleSummary.model_validate(t) for t in items],
         page=page,
         page_size=page_size,
         total=total,
     )
+    _TITLES_CACHE[cache_key] = (response.model_dump(), now + _TITLES_CACHE_TTL_SECONDS)
+    return response
 
 
 @router.get("/coming-soon", response_model=list[TitleSummary])

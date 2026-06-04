@@ -17,10 +17,15 @@ export default function Browse() {
     page_size: 30,
   };
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching } = useQuery({
     queryKey: ["titles", filters],
     queryFn: () => catalog.listTitles(filters),
+    // Keep the previous page's results visible while a new query loads —
+    // makes filter swaps feel instant instead of flashing to "Loading…"
     placeholderData: (prev) => prev,
+    // Backend caches list responses for 60s; mirror that on the client so
+    // back-nav from a title detail re-uses what we already have.
+    staleTime: 60_000,
   });
 
   const genresQ = useQuery({
@@ -82,7 +87,15 @@ export default function Browse() {
         </div>
       </header>
 
-      {isLoading && <div className="text-white/60">Loading…</div>}
+      {/* First-time load — shimmer grid replaces the bare "Loading…" text.
+          Cold Neon round-trip is 5-30s; a skeleton makes the wait readable. */}
+      {isLoading && (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+          {[...Array(12)].map((_, i) => (
+            <div key={i} className="skeleton-shimmer aspect-video rounded" />
+          ))}
+        </div>
+      )}
 
       {data && data.items.length === 0 && (
         <div className="rounded border border-white/10 bg-[var(--color-bg-elevated)] p-8 text-center text-white/60">
@@ -90,8 +103,12 @@ export default function Browse() {
         </div>
       )}
 
-      {data && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+      {data && data.items.length > 0 && (
+        <div
+          className={`grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 transition-opacity duration-200 ${
+            isFetching ? "opacity-60" : "opacity-100"
+          }`}
+        >
           {data.items.map((t) => (
             <TitleCard key={t.id} title={t} />
           ))}

@@ -38,6 +38,18 @@ from app.schemas.user import UserRead
 from app.services import admin as svc
 from app.services import audit as audit_svc
 
+
+def _bust_catalog_caches() -> None:
+    """Clear the public list + genre caches after any catalog mutation.
+    Imports are lazy so this file doesn't depend on the public router order.
+    Without this, admins watch stale data persist for up to 60s after a
+    publish / archive / delete."""
+    from app.api.v1.titles import invalidate_titles_cache
+    from app.api.v1.home import invalidate_genres_cache
+
+    invalidate_titles_cache()
+    invalidate_genres_cache()
+
 router = APIRouter()
 
 
@@ -67,6 +79,7 @@ async def create_title(
         t = await svc.create_title(db, actor, payload.model_dump(), request_id=_req_id(request))
     except svc.SlugInUse as e:
         raise _err(e, 409) from e
+    _bust_catalog_caches()
     from app.api.v1.titles import _title_to_detail
 
     return _title_to_detail(t)
@@ -104,6 +117,7 @@ async def update_title(
         )
     except svc.TitleNotFound as e:
         raise _err(e, 404) from e
+    _bust_catalog_caches()
     from app.api.v1.titles import _title_to_detail
 
     return _title_to_detail(t)
@@ -117,6 +131,7 @@ async def publish_title(
         t = await svc.publish_title(db, actor, title_id, request_id=_req_id(request))
     except svc.TitleNotFound as e:
         raise _err(e, 404) from e
+    _bust_catalog_caches()
     from app.api.v1.titles import _title_to_detail
 
     return _title_to_detail(t)
@@ -151,6 +166,7 @@ async def archive_title(
         t = await svc.archive_title(db, actor, title_id, request_id=_req_id(request))
     except svc.TitleNotFound as e:
         raise _err(e, 404) from e
+    _bust_catalog_caches()
     from app.api.v1.titles import _title_to_detail
 
     return _title_to_detail(t)
@@ -164,6 +180,7 @@ async def delete_title(
         await svc.soft_delete_title(db, actor, title_id, request_id=_req_id(request))
     except svc.TitleNotFound as e:
         raise _err(e, 404) from e
+    _bust_catalog_caches()
 
 
 # ---- Seasons -----------------------------------------------------------------

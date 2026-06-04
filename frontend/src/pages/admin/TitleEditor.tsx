@@ -148,7 +148,11 @@ export default function TitleEditor() {
             value={form.synopsis}
             onChange={(e) => setForm({ ...form, synopsis: e.target.value })}
           />
-          <div className="grid grid-cols-3 gap-3">
+          {/* Year / Runtime / Age — was a hard 3-col grid that clipped the
+              Age placeholder to "U / L" at tablet (768px) widths. Now stacks
+              to 1 col on the smallest viewports, 3 cols at lg+ so the labels
+              + placeholders never truncate. */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
               <label className="block text-xs uppercase tracking-wider text-white/60">Year</label>
               <input
@@ -158,7 +162,11 @@ export default function TitleEditor() {
               />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-wider text-white/60">Runtime (min)</label>
+              <label className="block text-xs uppercase tracking-wider text-white/60">
+                Runtime
+                <span className="hidden sm:inline"> (min)</span>
+                <span className="sm:hidden"> (minutes)</span>
+              </label>
               <input
                 className="input-base"
                 value={form.runtime_minutes}
@@ -166,7 +174,9 @@ export default function TitleEditor() {
               />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-wider text-white/60">Age</label>
+              <label className="block text-xs uppercase tracking-wider text-white/60">
+                Age rating
+              </label>
               <input
                 className="input-base"
                 placeholder="U / U/A / A"

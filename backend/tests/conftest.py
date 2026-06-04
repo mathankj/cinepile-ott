@@ -354,6 +354,24 @@ def _setup_storage_mock(monkeypatch, *, public_url: str | None):
     return mock, storage_svc, get_settings, bucket_name
 
 
+@pytest.fixture(autouse=True)
+def _clear_module_caches():
+    """Wipe the per-process TTL caches before each test.
+
+    The /v1/titles and /v1/home/genres endpoints have module-level dicts
+    that survive across tests. Without this, a test that creates titles
+    after a previous test had already cached an empty list would see the
+    stale cached value instead of its freshly-inserted rows.
+    """
+    from app.api.v1 import home as _home_router, titles as _titles_router
+    from app.services import browse as _browse_svc
+
+    _titles_router._TITLES_CACHE.clear()
+    _home_router._GENRES_CACHE = None  # noqa: SLF001 — test cleanup needs internals
+    _browse_svc._HOME_CACHE.clear()
+    yield
+
+
 @pytest.fixture
 def storage_mock(monkeypatch):
     """Public bucket mode — STORAGE_PUBLIC_URL set; uploads return full URLs."""

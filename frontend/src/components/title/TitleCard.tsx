@@ -179,10 +179,13 @@ export function TitleCard({
           </div>
         </div>
 
-        {/* Idle FREE badge — top-left when not hovering. Mirrors the badge inside
-            the hover reveal so we never have both visible at once. */}
+        {/* Idle FREE badge — top-RIGHT corner so it never visually clashes
+            with the bottom-anchored title strip (the QA audit caught it
+            crowding long titles like "QA Walkthrough Demo"). z-20 keeps it
+            clearly above the title strip's gradient. Hides on hover so the
+            mirrored badge inside the reveal overlay can take over. */}
         {title.is_free && (
-          <div className="absolute left-2 top-2 rounded bg-[var(--color-brand)] px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-white shadow-lg transition-opacity duration-200 group-hover/card:opacity-0">
+          <div className="absolute right-2 top-2 z-20 rounded-sm bg-[var(--color-brand)] px-2 py-0.5 text-[10px] font-bold tracking-wider text-white shadow-md ring-1 ring-black/30 transition-opacity duration-200 group-hover/card:opacity-0">
             FREE
           </div>
         )}
