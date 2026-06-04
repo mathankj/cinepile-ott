@@ -1,89 +1,80 @@
 /**
- * Avatar registry — Netflix / Amazon Prime style illustrated character heads.
+ * Avatar registry — bold colour-gradient tiles with a centred Lucide icon.
  *
- * Each avatar has a short stable `id` (stored on the Profile row) and resolves
- * to an SVG URL on demand. We use DiceBear's hosted SVG API (free, no key
- * needed); the seed is what makes each one look different. SVGs are tiny
- * (~3-5 KB) and the browser caches them after first load.
+ * Why this design over network-fetched cartoon faces:
+ *  - Instant render (no SVG over the wire, no DiceBear API dependency)
+ *  - Scales infinitely (icon is an SVG; gradient is CSS)
+ *  - Looks intentional + modern (Amazon Prime, Hotstar use solid-colour tiles
+ *    with iconography; Netflix uses character portraits we don't have IP for)
+ *  - Each tile has a distinct identity via colour + icon combo
  *
- * Backwards compat: legacy profiles created before this registry may have
- * an emoji glyph in the `avatar` field (e.g. "👤"). `resolveAvatar` detects
- * that and returns null so the UI falls back to rendering the glyph.
+ * Each avatar has:
+ *  - id: short stable string stored on the Profile row
+ *  - label: human-readable name shown in the picker
+ *  - icon: a Lucide icon component
+ *  - gradient: a Tailwind CSS gradient class for the background
  *
- * Why DiceBear over emoji:
- *  - Emoji rendering on Windows is sluggish at large sizes (was visibly
- *    lagging in the profile picker — the "appears late" UX the user flagged).
- *  - Different OSes render the same emoji very differently (Apple vs MS),
- *    which would make the picker look inconsistent across devices.
- *  - Illustrated portraits are what Netflix + Amazon Prime + Hotstar use.
+ * Backwards compat:
+ *  - Legacy emoji avatars (👤 etc.) and unknown ids fall through to the
+ *    "default" tile rather than rendering broken.
  */
-
-/** Avatar style — DiceBear 9.x `notionists-neutral` gives clean illustrated
- *  character heads with a neutral background that matches our dark theme. */
-const DICEBEAR_STYLE = "notionists-neutral";
-
-/** Background colour palette applied to every generated avatar. Picked to be
- *  warm + brand-consistent (not the default DiceBear pastels). */
-const BG_PALETTE = "b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf,c1f0d3,fae29d";
+import type { LucideIcon } from "lucide-react";
+import {
+  Bot,
+  ChefHat,
+  Compass,
+  Crown,
+  Flame,
+  FlaskConical,
+  Gamepad2,
+  Heart,
+  Rocket,
+  Shield,
+  Smile,
+  Sparkles,
+  Star,
+  Sword,
+  User,
+} from "lucide-react";
 
 export type AvatarOption = {
-  id: string;         // Stored on the Profile row
-  label: string;      // What the picker shows under the tile
-  url: string;        // Resolved SVG URL
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  /** Tailwind gradient classes — applied to the tile background */
+  gradient: string;
 };
 
 /**
- * Curated set of 12 avatar identities. The DiceBear seed is just the id —
- * stable across users because we want everyone to see the same avatar when
- * they pick "panda". Ordered so the first few are most universally appealing
- * (kid-friendly + adult-friendly).
+ * Curated 12 avatars. Colour palette is hand-picked for variety + vibrance,
+ * not auto-generated. Each id is the seed key written to the database; once
+ * shipped to users, NEVER rename or you'll orphan their profile selection.
  */
-const AVATARS: { id: string; label: string }[] = [
-  { id: "default", label: "Default" },
-  { id: "panda", label: "Panda" },
-  { id: "fox", label: "Fox" },
-  { id: "astronaut", label: "Astronaut" },
-  { id: "ninja", label: "Ninja" },
-  { id: "robot", label: "Robot" },
-  { id: "wizard", label: "Wizard" },
-  { id: "chef", label: "Chef" },
-  { id: "warrior", label: "Warrior" },
-  { id: "scientist", label: "Scientist" },
-  { id: "kid", label: "Kid" },
-  { id: "explorer", label: "Explorer" },
+export const AVATAR_OPTIONS: AvatarOption[] = [
+  { id: "default",   label: "Default",   icon: User,         gradient: "from-indigo-500 to-purple-700" },
+  { id: "panda",     label: "Panda",     icon: Heart,        gradient: "from-pink-500 to-rose-700" },
+  { id: "fox",       label: "Fox",       icon: Flame,        gradient: "from-orange-500 to-red-700" },
+  { id: "astronaut", label: "Astronaut", icon: Rocket,       gradient: "from-slate-700 to-blue-900" },
+  { id: "ninja",     label: "Ninja",     icon: Sword,        gradient: "from-zinc-800 to-black" },
+  { id: "robot",     label: "Robot",     icon: Bot,          gradient: "from-cyan-500 to-teal-700" },
+  { id: "wizard",    label: "Wizard",    icon: Sparkles,     gradient: "from-violet-500 to-purple-800" },
+  { id: "chef",      label: "Chef",      icon: ChefHat,      gradient: "from-amber-400 to-orange-600" },
+  { id: "warrior",   label: "Warrior",   icon: Shield,       gradient: "from-red-600 to-rose-900" },
+  { id: "scientist", label: "Scientist", icon: FlaskConical, gradient: "from-emerald-500 to-green-800" },
+  { id: "kid",       label: "Kid",       icon: Smile,        gradient: "from-yellow-400 to-amber-600" },
+  { id: "explorer",  label: "Explorer",  icon: Compass,      gradient: "from-teal-500 to-emerald-800" },
+  { id: "gamer",     label: "Gamer",     icon: Gamepad2,     gradient: "from-fuchsia-500 to-pink-700" },
+  { id: "vip",       label: "VIP",       icon: Crown,        gradient: "from-yellow-500 to-amber-700" },
+  { id: "star",      label: "Star",      icon: Star,         gradient: "from-sky-400 to-blue-700" },
 ];
-
-function buildUrl(seed: string): string {
-  // DiceBear's hosted SVG API — params: seed (drives the character), backgroundColor.
-  const params = new URLSearchParams({
-    seed: `cinepile-${seed}`,
-    backgroundColor: BG_PALETTE,
-    radius: "12",
-  });
-  return `https://api.dicebear.com/9.x/${DICEBEAR_STYLE}/svg?${params.toString()}`;
-}
-
-export const AVATAR_OPTIONS: AvatarOption[] = AVATARS.map((a) => ({
-  ...a,
-  url: buildUrl(a.id),
-}));
 
 const AVATAR_INDEX = new Map(AVATAR_OPTIONS.map((a) => [a.id, a]));
 
 /**
- * Resolve an avatar value from a Profile into a usable display.
- * - If the value matches a registered id → returns `{ url, label }`.
- * - If the value is an emoji glyph (legacy data) → returns `null` so the
- *   caller can render the glyph as text instead.
+ * Resolve a stored avatar value to its render config. Unknown ids and legacy
+ * emoji glyphs both fall through to "default" so nothing ever renders broken.
  */
-export function resolveAvatar(value: string | null | undefined): AvatarOption | null {
-  if (!value) return AVATAR_INDEX.get("default") ?? null;
-  return AVATAR_INDEX.get(value) ?? null;
-}
-
-/** True when the stored avatar value is a single emoji glyph rather than an id.
- *  Cheap heuristic: ids are ASCII; emojis have code points outside ASCII. */
-export function isLegacyEmoji(value: string | null | undefined): boolean {
-  if (!value) return false;
-  return /[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/u.test(value);
+export function resolveAvatar(value: string | null | undefined): AvatarOption {
+  if (!value) return AVATAR_INDEX.get("default")!;
+  return AVATAR_INDEX.get(value) ?? AVATAR_INDEX.get("default")!;
 }

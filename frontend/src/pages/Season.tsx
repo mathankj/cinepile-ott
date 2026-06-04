@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { Play } from "lucide-react";
@@ -6,11 +7,19 @@ import { catalog } from "../api";
 /**
  * Season detail — list of episodes for a season.
  * Scheduled episodes are shown but with "Coming on …" instead of a Play link.
+ *
+ * Long-season handling: episodes are paged 12 at a time so a 26-episode
+ * anime/drama doesn't render a 26-card list (slow paint + scroll fatigue).
+ * Below the threshold the "Show more" affordance is hidden — short seasons
+ * stay one-page.
  */
+const EPISODES_PER_PAGE = 12;
+
 export default function SeasonPage() {
   const { titleId, seasonNumber } = useParams();
   const tid = Number(titleId);
   const sn = Number(seasonNumber);
+  const [visibleCount, setVisibleCount] = useState(EPISODES_PER_PAGE);
 
   const { data: season } = useQuery({
     queryKey: ["season", tid, sn],
@@ -26,6 +35,10 @@ export default function SeasonPage() {
 
   if (!season || !title) return <div className="p-8 text-white/60">Loading…</div>;
 
+  const totalEpisodes = season.episodes.length;
+  const visibleEpisodes = season.episodes.slice(0, visibleCount);
+  const hasMore = visibleCount < totalEpisodes;
+
   return (
     <div className="px-4 md:px-8 lg:px-[60px] py-12">
       <Link to={`/title/${tid}`} className="text-sm text-white/60 hover:text-white">
@@ -35,9 +48,14 @@ export default function SeasonPage() {
         {season.name || `Season ${season.season_number}`}
       </h1>
       {season.synopsis && <p className="mt-2 max-w-[640px] text-white/70">{season.synopsis}</p>}
+      {totalEpisodes > EPISODES_PER_PAGE && (
+        <div className="mt-2 text-sm text-white/50">
+          Showing {Math.min(visibleCount, totalEpisodes)} of {totalEpisodes} episodes
+        </div>
+      )}
 
       <div className="mt-8 grid gap-4">
-        {season.episodes.map((ep) => {
+        {visibleEpisodes.map((ep) => {
           const isPlayable = ep.status === "published";
           return (
             <article
@@ -98,6 +116,18 @@ export default function SeasonPage() {
           );
         })}
       </div>
+
+      {hasMore && (
+        <div className="mt-8 flex justify-center">
+          <button
+            type="button"
+            onClick={() => setVisibleCount((n) => Math.min(n + EPISODES_PER_PAGE, totalEpisodes))}
+            className="rounded border border-white/30 px-6 py-2.5 text-sm font-semibold text-white/80 transition-colors hover:border-white hover:text-white"
+          >
+            Show more episodes ({totalEpisodes - visibleCount} left)
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,23 +1,24 @@
 /**
- * Avatar tile — renders an illustrated character SVG when the value is a
- * registered avatar id, or falls back to the legacy emoji glyph + a subtle
- * skeleton shimmer while the SVG loads.
+ * Avatar tile — colour-gradient background + centred Lucide icon.
  *
- * Use anywhere a profile's avatar appears: the picker tiles, the navbar
- * dropdown trigger, the profile menu header.
+ * Renders instantly (no network), looks intentional, scales infinitely.
+ * Use anywhere a profile's avatar appears: picker tiles, navbar trigger,
+ * profile menu header, form modal.
  */
-import { useState } from "react";
-import { resolveAvatar, isLegacyEmoji } from "../lib/avatars";
+import { resolveAvatar } from "../lib/avatars";
 
 type Size = "xs" | "sm" | "md" | "lg" | "xl";
 
 const SIZE_PX: Record<Size, number> = {
-  xs: 28,
-  sm: 36,
+  xs: 32,
+  sm: 40,
   md: 56,
   lg: 120,
   xl: 160,
 };
+
+// Icon takes up ~50% of the tile so the gradient stays the dominant visual.
+const ICON_FRACTION = 0.5;
 
 export function Avatar({
   value,
@@ -32,52 +33,20 @@ export function Avatar({
 }) {
   const px = SIZE_PX[size];
   const opt = resolveAvatar(value);
-  const [loaded, setLoaded] = useState(false);
+  const Icon = opt.icon;
+  const iconSize = Math.round(px * ICON_FRACTION);
+  // Larger sizes deserve a softer rounded corner; xs/sm get a tighter radius
+  // so the tile looks proportionally clean even at navbar dimensions.
+  const radius = size === "xs" || size === "sm" ? "rounded-md" : "rounded-lg";
 
-  // Legacy emoji path — render the glyph in a coloured tile so it still
-  // looks branded. No async load → no shimmer needed.
-  if (!opt && isLegacyEmoji(value)) {
-    return (
-      <div
-        className={`grid place-items-center rounded-md bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] ${className}`}
-        style={{ width: px, height: px }}
-        aria-label={alt ?? "Profile avatar"}
-      >
-        <span style={{ fontSize: px * 0.6, lineHeight: 1 }}>{value}</span>
-      </div>
-    );
-  }
-
-  // Modern path — DiceBear SVG with shimmer placeholder while it loads.
-  // The placeholder uses the same dimensions to avoid layout shift.
-  const url = opt?.url;
   return (
     <div
-      className={`relative overflow-hidden rounded-md bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] ${className}`}
+      className={`relative grid place-items-center bg-gradient-to-br ${opt.gradient} ${radius} shadow-sm ${className}`}
       style={{ width: px, height: px }}
-      aria-label={alt ?? opt?.label ?? "Profile avatar"}
+      aria-label={alt ?? opt.label}
+      role="img"
     >
-      {!loaded && <div className="skeleton-shimmer absolute inset-0" />}
-      {url && (
-        <img
-          src={url}
-          alt={alt ?? opt?.label ?? ""}
-          width={px}
-          height={px}
-          loading="eager"
-          decoding="async"
-          onLoad={() => setLoaded(true)}
-          // Inline `style` rather than Tailwind so the SVG sits at exactly
-          // the requested pixel size regardless of viewport (the SVG itself
-          // is responsive and would otherwise inherit 100%).
-          style={{
-            width: px,
-            height: px,
-            opacity: loaded ? 1 : 0,
-            transition: "opacity 180ms ease-out",
-          }}
-        />
-      )}
+      <Icon size={iconSize} className="text-white drop-shadow-sm" strokeWidth={2.25} />
     </div>
   );
 }

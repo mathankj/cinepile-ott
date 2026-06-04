@@ -7,19 +7,34 @@ import { Search as SearchIcon } from "lucide-react";
 
 export default function Search() {
   const [params, setParams] = useSearchParams();
+  // Seed from URL — if the user lands here from a back-nav (or bookmark),
+  // the input pre-populates with whatever was in ?q=. Also fires the
+  // debounced effect below so results render on first paint.
   const [q, setQ] = useState(params.get("q") ?? "");
 
   // Debounce 300ms before firing the query
-  const [debounced, setDebounced] = useState(q);
+  const [debounced, setDebounced] = useState(q.trim());
   useEffect(() => {
     const t = setTimeout(() => setDebounced(q.trim()), 300);
     return () => clearTimeout(t);
   }, [q]);
 
+  // Keep URL in sync with the debounced query. Two behaviours that matter:
+  //  1) Only write to URL when query is 2+ chars (matches the API's min-length
+  //     guard). Single-char inputs would otherwise leave a `?q=b` in history
+  //     that re-renders as "Type at least 2 characters" — stale state.
+  //  2) `replace: true` so each keystroke doesn't push a new history entry.
+  //     The original /search entry IS preserved as the back-target; only its
+  //     URL changes. Clicking a result then pushes /title/X normally, so
+  //     back from /title/X correctly returns to /search?q=bunny.
   useEffect(() => {
-    if (debounced) setParams({ q: debounced }, { replace: true });
-    else setParams({}, { replace: true });
-  }, [debounced, setParams]);
+    const current = params.get("q") ?? "";
+    if (debounced.length >= 2) {
+      if (current !== debounced) setParams({ q: debounced }, { replace: true });
+    } else if (current) {
+      setParams({}, { replace: true });
+    }
+  }, [debounced, params, setParams]);
 
   const { data, isFetching } = useQuery({
     queryKey: ["search", debounced],

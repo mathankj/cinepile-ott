@@ -230,18 +230,18 @@ function ProfileFormModal({
         <label className="mb-2 block text-xs uppercase tracking-wider text-white/60">
           Avatar
         </label>
-        <div className="mb-5 grid grid-cols-6 gap-2">
+        <div className="mb-5 grid grid-cols-5 gap-2.5">
           {AVATAR_OPTIONS.map((a) => (
             <button
               key={a.id}
               type="button"
               onClick={() => setAvatar(a.id)}
               aria-label={`Choose avatar: ${a.label}`}
-              className={`rounded-md transition ${
-                avatar === a.id ? "ring-2 ring-white" : "ring-2 ring-transparent hover:ring-white/40"
+              className={`rounded-lg transition ${
+                avatar === a.id ? "ring-2 ring-white ring-offset-2 ring-offset-[var(--color-bg-elevated)]" : "ring-2 ring-transparent hover:ring-white/40"
               }`}
             >
-              <Avatar value={a.id} size="sm" alt={a.label} />
+              <Avatar value={a.id} size="md" alt={a.label} />
             </button>
           ))}
         </div>
