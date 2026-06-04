@@ -18,10 +18,20 @@ class UserLogin(BaseModel):
 
 
 class UserRead(BaseModel):
+    """Output schema for user data — uses `str` for email, not EmailStr.
+
+    Why: Pydantic's EmailStr rejects RFC-6761 reserved TLDs (.local, .test,
+    .example, .localhost). On INPUT (signup) we want that validation. On
+    OUTPUT we just want to return whatever is in the DB without crashing
+    the whole list endpoint when one legacy row has a `.local` email.
+    Found in QA: `admin@anjaneya.local` from an old test seed was 500'ing
+    GET /v1/admin/users for every admin viewer.
+    """
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    email: EmailStr
+    email: str
     full_name: str | None
     role: str
     is_active: bool

@@ -71,7 +71,7 @@ async def ensure_primary_profile(db: AsyncSession, user_id: int, default_name: s
     profile = Profile(
         user_id=user_id,
         name=name,
-        avatar="👤",
+        avatar="default",
         kind="adult",
         is_primary=True,
     )

@@ -446,7 +446,7 @@ async def _ensure_user(s, email, password, role, full_name):
             Profile(
                 user_id=user.id,
                 name=(full_name or email.split("@")[0])[:32],
-                avatar="👤",
+                avatar="default",
                 kind="adult",
                 is_primary=True,
             )

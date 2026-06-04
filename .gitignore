@@ -62,3 +62,6 @@ backend/uploads/
 backend/media/
 storage/
 .gstack/
+
+# Word / Excel lock files
+**/~$*

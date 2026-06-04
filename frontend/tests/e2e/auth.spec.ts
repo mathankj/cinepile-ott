@@ -16,7 +16,7 @@ test.describe("Auth flow", () => {
     // After login we're on /
     await expect(page).toHaveURL(/\/$/);
     // Profile menu has the Admin link (we click the profile avatar first)
-    await page.locator('header button:has(span)').first().click();
+    await page.locator('button[aria-label="Account menu"]').click();
     await expect(page.locator('a[href="/admin"]:has-text("Admin")')).toBeVisible();
   });
 
@@ -39,7 +39,7 @@ test.describe("Auth flow", () => {
   test("logout via profile menu clears session", async ({ page }, testInfo) => {
     test.skip(testInfo.project.name === "mobile-chromium", "Profile menu lives in the desktop header; mobile logout is in the drawer");
     await loginAs(page, "user");
-    await page.locator('header button:has(span)').first().click();
+    await page.locator('button[aria-label="Account menu"]').click();
     await page.locator('button:has-text("Sign out")').click();
     await page.waitForURL("/", { timeout: 5_000 });
     await expect(page.locator("text=Sign In").first()).toBeVisible();

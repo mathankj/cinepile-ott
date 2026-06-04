@@ -92,9 +92,11 @@ export default function Login() {
             />
             {t("auth.remember_me")}
           </label>
-          <Link to="/login" className="hover:underline">
+          {/* Real password-reset flow lives in Phase 2 (needs SMTP). Hide the
+              link until then rather than send users to a dead page. */}
+          <span className="text-white/40" title="Coming soon — contact support meanwhile">
             {t("auth.need_help")}
-          </Link>
+          </span>
         </div>
       </form>
     </AuthShell>

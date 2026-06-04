@@ -29,9 +29,12 @@ class Profile(Base):
     )
     # Display name — what the user sees on the picker. Max 32 like Netflix.
     name: Mapped[str] = mapped_column(String(32), nullable=False)
-    # Avatar — emoji glyph (we render it as the avatar). Cheap, no image assets
-    # to host, looks fine on the picker.
-    avatar: Mapped[str] = mapped_column(String(8), nullable=False, default="👤")
+    # Avatar — either a short ID into the frontend's avatar registry (e.g.
+    # "panda", "astronaut", "ninja") which renders as an illustrated SVG via
+    # DiceBear, OR an emoji glyph for legacy rows. The frontend's avatar
+    # library detects the format and renders accordingly. 32 chars covers
+    # both formats with headroom for future avatar variants.
+    avatar: Mapped[str] = mapped_column(String(32), nullable=False, default="default")
     # "adult" or "kid" — kids profiles will (in future) filter to U-rated content
     # only. For V1 the flag is stored but not enforced anywhere; we'll wire it
     # to the content filter once age-rating gating is fully implemented.

@@ -381,9 +381,17 @@ async def main() -> None:
         size_kb = pdf_out.stat().st_size // 1024
         print(f"  PDF  -> {pdf_out.relative_to(ROOT)}  ({size_kb} KB)")
 
-        # DOCX
+        # DOCX — fall back to a `.new.docx` filename if the target is locked
+        # (typical when the user has it open in Word). The script never fails
+        # because of an editor lock; it just writes to a side file the user
+        # can rename manually.
         docx_out = EXPORT / src.with_suffix(".docx").name
-        md_to_docx(body, docx_out, base_dir=DOCS)
+        try:
+            md_to_docx(body, docx_out, base_dir=DOCS)
+        except PermissionError:
+            docx_out = EXPORT / (src.stem + ".new.docx")
+            md_to_docx(body, docx_out, base_dir=DOCS)
+            print(f"  ! original DOCX locked (open in Word?), wrote to {docx_out.name}")
         size_kb = docx_out.stat().st_size // 1024
         print(f"  DOCX -> {docx_out.relative_to(ROOT)}  ({size_kb} KB)")
 

@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useAuthStore } from "../../stores/auth";
 import { useProfileStore } from "../../stores/profile";
 import { LANGUAGES } from "../../i18n";
+import { Avatar } from "../Avatar";
 
 /**
  * Top navigation — transparent over hero, fades to solid #141414 on scroll > 60px.
@@ -244,7 +245,6 @@ function ProfileMenu({
   const activeProfile = useProfileStore((s) => s.active);
   const clearProfile = useProfileStore((s) => s.clear);
   if (!user) return null;
-  const fallbackInitial = (user.full_name || user.email).slice(0, 1).toUpperCase();
   return (
     <div className="relative">
       <button
@@ -253,9 +253,7 @@ function ProfileMenu({
         className="flex items-center gap-2"
         aria-label={t("nav.account_menu")}
       >
-        <span className="grid h-8 w-8 place-items-center rounded bg-[var(--color-bg-surface)] text-base font-bold text-white">
-          {activeProfile?.avatar ?? fallbackInitial}
-        </span>
+        <Avatar value={activeProfile?.avatar} size="xs" alt={activeProfile?.name ?? user.email} />
         <ChevronDown size={14} className="text-white/70" />
       </button>
       {open && (
@@ -263,9 +261,7 @@ function ProfileMenu({
           {activeProfile && (
             <div className="px-3 py-2 border-b border-white/10">
               <div className="flex items-center gap-2">
-                <span className="grid h-8 w-8 place-items-center rounded bg-[var(--color-bg-surface)] text-base">
-                  {activeProfile.avatar}
-                </span>
+                <Avatar value={activeProfile.avatar} size="sm" alt={activeProfile.name} />
                 <div>
                   <div className="font-medium text-white">{activeProfile.name}</div>
                   <div className="text-[11px] text-white/60">{user.email}</div>

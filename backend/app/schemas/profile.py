@@ -19,13 +19,13 @@ class ProfileRead(BaseModel):
 
 class ProfileCreate(BaseModel):
     name: str = Field(min_length=1, max_length=32)
-    avatar: str = Field(min_length=1, max_length=8, default="👤")
+    avatar: str = Field(min_length=1, max_length=32, default="default")
     kind: Literal["adult", "kid"] = "adult"
 
 
 class ProfileUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=32)
-    avatar: str | None = Field(default=None, min_length=1, max_length=8)
+    avatar: str | None = Field(default=None, min_length=1, max_length=32)
     kind: Literal["adult", "kid"] | None = None
 
 

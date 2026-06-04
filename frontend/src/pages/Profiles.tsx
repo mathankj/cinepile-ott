@@ -12,9 +12,9 @@ import { Plus, Pencil, Trash2 } from "lucide-react";
 import { me } from "../api";
 import { apiErrorMessage } from "../api/client";
 import { useProfileStore } from "../stores/profile";
+import { AVATAR_OPTIONS } from "../lib/avatars";
+import { Avatar } from "../components/Avatar";
 import type { Profile } from "../api/types";
-
-const AVATAR_OPTIONS = ["👤", "🧑", "🧒", "👩", "👨", "👧", "👦", "🦸", "🦹", "🧛", "🦊", "🐯", "🐼", "🐱", "🐧", "🦄"];
 
 export default function ProfilesPage() {
   const nav = useNavigate();
@@ -125,12 +125,16 @@ function ProfileTile({
       onClick={onClick}
       className="group flex flex-col items-center"
     >
-      <div className="relative h-[120px] w-[120px] md:h-[160px] md:w-[160px] overflow-hidden rounded-md bg-gradient-to-br from-[#1a1a1a] to-[#2a2a2a] ring-2 ring-transparent group-hover:ring-white">
-        <div className="grid h-full w-full place-items-center text-6xl md:text-7xl">
-          {profile.avatar}
+      <div className="relative rounded-md ring-2 ring-transparent group-hover:ring-white">
+        {/* lg = 120px, xl = 160px — keep the picker tile size we already had */}
+        <div className="block md:hidden">
+          <Avatar value={profile.avatar} size="lg" alt={profile.name} />
+        </div>
+        <div className="hidden md:block">
+          <Avatar value={profile.avatar} size="xl" alt={profile.name} />
         </div>
         {editing && (
-          <div className="absolute inset-0 grid place-items-center bg-black/60">
+          <div className="absolute inset-0 grid place-items-center rounded-md bg-black/60">
             <Pencil size={28} className="text-white" />
           </div>
         )}
@@ -177,7 +181,7 @@ function ProfileFormModal({
   onSaved: () => void;
 }) {
   const [name, setName] = useState(profile?.name ?? "");
-  const [avatar, setAvatar] = useState(profile?.avatar ?? "👤");
+  const [avatar, setAvatar] = useState(profile?.avatar ?? "default");
   const [kind, setKind] = useState<"adult" | "kid">(profile?.kind ?? "adult");
   const [err, setErr] = useState<string | null>(null);
 
@@ -226,18 +230,18 @@ function ProfileFormModal({
         <label className="mb-2 block text-xs uppercase tracking-wider text-white/60">
           Avatar
         </label>
-        <div className="mb-5 grid grid-cols-8 gap-2">
+        <div className="mb-5 grid grid-cols-6 gap-2">
           {AVATAR_OPTIONS.map((a) => (
             <button
-              key={a}
+              key={a.id}
               type="button"
-              onClick={() => setAvatar(a)}
-              aria-label={`Choose avatar ${a}`}
-              className={`grid h-10 w-10 place-items-center rounded text-2xl transition ${
-                avatar === a ? "bg-white/20 ring-2 ring-white" : "hover:bg-white/10"
+              onClick={() => setAvatar(a.id)}
+              aria-label={`Choose avatar: ${a.label}`}
+              className={`rounded-md transition ${
+                avatar === a.id ? "ring-2 ring-white" : "ring-2 ring-transparent hover:ring-white/40"
               }`}
             >
-              {a}
+              <Avatar value={a.id} size="sm" alt={a.label} />
             </button>
           ))}
         </div>
