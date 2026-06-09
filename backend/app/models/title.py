@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, BigInteger, DateTime, String, Table, Column, ForeignKey, Text
+from sqlalchemy import JSON, BigInteger, DateTime, Index, String, Table, Column, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -91,6 +91,14 @@ class Title(Base):
     credits: Mapped[list["TitleCredit"]] = relationship(
         "TitleCredit", back_populates="title", cascade="all, delete-orphan", lazy="selectin"
     )
+
+
+# Indexes backing the hot read paths (docs/db-schema.md documents these).
+# Declared at model level so the SQLite test DB (built from metadata) gets
+# them too; the matching Alembic migration creates them on Postgres.
+Index("ix_titles_status_published_at", Title.status, Title.published_at)  # default listings
+Index("ix_titles_type_status", Title.type, Title.status)  # movie/series filter
+Index("ix_titles_view_count_desc", Title.view_count.desc())  # trending / similar ordering
 
 
 class TitleAsset(Base):

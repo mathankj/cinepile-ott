@@ -7,15 +7,23 @@ saves needing a background job for V1.5.
 """
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 
 from sqlalchemy import String, and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import noload
 
 from app.models.episode import Episode
 from app.models.genre import Genre
 from app.models.season import Season
 from app.models.title import Title, titles_genres
+
+# List/search/row queries project into TitleSummary (scalar columns only).
+# The Title model eager-loads 7 relationships via lazy="selectin" — right for
+# the detail page (get_title / get_season keep it), wasteful here: without
+# noload("*") every list query fans out into ~7 extra SELECTs nothing reads.
+_SUMMARY_ONLY = noload("*")
 
 
 class TitleNotFound(Exception):
@@ -43,9 +51,38 @@ def _as_utc(dt: datetime | None) -> datetime | None:
     return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
 
 
+# Throttle for auto_promote_scheduled: it used to run 2 UPDATE statements on
+# EVERY uncached list/detail read, which on Neon means two extra round trips
+# per request for a job that only matters around a publish_at boundary.
+# Running it at most once per interval per process keeps scheduled publishes
+# near-on-time (worst case: visible 30 s late) at ~zero per-request cost.
+_PROMOTE_INTERVAL_SECONDS = 30.0
+_last_promote_monotonic: float | None = None
+
+
+def reset_promotion_throttle() -> None:
+    """Allow the next read to run promotion immediately. Called after admin
+    catalog writes (via invalidate_titles_cache) so a freshly-scheduled title
+    with a past publish_at goes live on the very next read — and by tests,
+    which assert promotion behaviour and must not inherit another test's
+    throttle window."""
+    global _last_promote_monotonic
+    _last_promote_monotonic = None
+
+
 async def auto_promote_scheduled(db: AsyncSession) -> int:
     """Flip status=scheduled → published for any titles whose publish_at has passed.
-    Cheap and idempotent — call it at the top of list/detail reads."""
+    Cheap and idempotent — called at the top of list/detail reads, but throttled
+    to once per _PROMOTE_INTERVAL_SECONDS per process (see above)."""
+    global _last_promote_monotonic
+    mono = time.monotonic()
+    if (
+        _last_promote_monotonic is not None
+        and mono - _last_promote_monotonic < _PROMOTE_INTERVAL_SECONDS
+    ):
+        return 0
+    _last_promote_monotonic = mono
+
     now = _now()
     stmt = (
         update(Title)
@@ -91,7 +128,7 @@ async def list_titles(
 ) -> tuple[list[Title], int]:
     await auto_promote_scheduled(db)
 
-    stmt = select(Title).where(_published_filter())
+    stmt = select(Title).options(_SUMMARY_ONLY).where(_published_filter())
     count_stmt = select(func.count()).select_from(Title).where(_published_filter())
 
     if type_ in ("movie", "series"):
@@ -232,6 +269,7 @@ async def search_titles(db: AsyncSession, *, q: str, limit: int = 30) -> list[Ti
     needle = f"%{_escape_like(q.lower())}%"
     stmt = (
         select(Title)
+        .options(_SUMMARY_ONLY)
         .where(
             _published_filter(),
             or_(
@@ -240,6 +278,42 @@ async def search_titles(db: AsyncSession, *, q: str, limit: int = 30) -> list[Ti
                 func.lower(Title.synopsis).like(needle, escape="\\"),
             ),
         )
+        .limit(limit)
+    )
+    return list((await db.scalars(stmt)).unique().all())
+
+
+async def similar_titles(db: AsyncSession, title_id: int, *, limit: int = 20) -> list[Title]:
+    """Titles sharing at least one genre with the given title — the "More Like
+    This" rail on a detail page. Public surface: the seed must be a published,
+    non-deleted title (404 otherwise, same rule as the detail endpoint), and
+    results are restricted the same way. Ordered by view_count desc so the
+    rail leads with what people actually watch."""
+    seed = await db.get(Title, title_id)
+    if seed is None or seed.deleted_at is not None or seed.status != "published":
+        raise TitleNotFound
+
+    seed_genre_ids = (
+        await db.scalars(
+            select(titles_genres.c.genre_id).where(titles_genres.c.title_id == title_id)
+        )
+    ).all()
+    if not seed_genre_ids:
+        return []
+
+    # distinct() dedupes in SQL (a title matching 2 shared genres would
+    # otherwise occupy 2 of the LIMIT slots before Python-side .unique()).
+    stmt = (
+        select(Title)
+        .options(_SUMMARY_ONLY)
+        .join(titles_genres, titles_genres.c.title_id == Title.id)
+        .where(
+            _published_filter(),
+            titles_genres.c.genre_id.in_(seed_genre_ids),
+            Title.id != title_id,
+        )
+        .order_by(Title.view_count.desc(), Title.id.desc())
+        .distinct()
         .limit(limit)
     )
     return list((await db.scalars(stmt)).unique().all())
@@ -254,6 +328,7 @@ async def list_coming_soon(db: AsyncSession, *, limit: int = 20) -> list[Title]:
     now = _now()
     stmt = (
         select(Title)
+        .options(_SUMMARY_ONLY)
         .where(
             Title.status == "scheduled",
             Title.deleted_at.is_(None),

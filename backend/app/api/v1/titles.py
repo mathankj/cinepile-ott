@@ -59,15 +59,35 @@ _TITLES_CACHE_TTL_SECONDS = 300
 # seasons). Invalidated together with the list cache on admin writes.
 _TITLE_DETAIL_CACHE: dict[int, tuple[dict, float]] = {}
 _SEASON_DETAIL_CACHE: dict[tuple[int, int], tuple[dict, float]] = {}
+# "More Like This" rail, keyed by (title_id, limit). Same TTL + invalidation.
+_SIMILAR_CACHE: dict[tuple[int, int], tuple[list[dict], float]] = {}
+
+# Hard cap per cache dict. Cache keys come from request parameters (filters,
+# pages, title ids), so a crawler iterating filter combinations would grow
+# these dicts forever. When full we evict the oldest insertion (dicts keep
+# insertion order) — a cheap FIFO that's plenty for short-TTL caches.
+_CACHE_MAX_ENTRIES = 512
+
+
+def _cache_put(cache: dict, key, value) -> None:
+    """Insert into a TTL cache dict, evicting the oldest entry at the cap."""
+    if key not in cache and len(cache) >= _CACHE_MAX_ENTRIES:
+        cache.pop(next(iter(cache)))
+    cache[key] = value
 
 
 def invalidate_titles_cache() -> None:
-    """Drop ALL list + detail responses. Called from admin endpoints that
-    mutate the catalog (publish, archive, delete, create) so admins don't
+    """Drop ALL list + detail + similar responses. Called from admin endpoints
+    that mutate the catalog (publish, archive, delete, create) so admins don't
     see stale data immediately after a write."""
     _TITLES_CACHE.clear()
     _TITLE_DETAIL_CACHE.clear()
     _SEASON_DETAIL_CACHE.clear()
+    _SIMILAR_CACHE.clear()
+    # A catalog write may have scheduled (or re-scheduled) a title; clearing
+    # the promotion throttle lets the next read auto-promote immediately
+    # instead of waiting out the 30 s window.
+    catalog.reset_promotion_throttle()
 
 
 @router.get("", response_model=TitleListResponse)
@@ -76,7 +96,9 @@ async def list_titles(
     type: str | None = Query(default=None, pattern="^(movie|series)$"),
     genre: str | None = None,
     language: str | None = None,
-    country: str | None = None,
+    # ISO 3166-1 alpha-2 only — this value reaches a LIKE pattern in the
+    # service, so we constrain its shape at the HTTP boundary.
+    country: str | None = Query(default=None, min_length=2, max_length=2),
     year_from: int | None = None,
     year_to: int | None = None,
     sort: str = Query(
@@ -111,7 +133,7 @@ async def list_titles(
         page_size=page_size,
         total=total,
     )
-    _TITLES_CACHE[cache_key] = (response.model_dump(), now + _TITLES_CACHE_TTL_SECONDS)
+    _cache_put(_TITLES_CACHE, cache_key, (response.model_dump(), now + _TITLES_CACHE_TTL_SECONDS))
     return response
 
 
@@ -143,7 +165,7 @@ async def get_title(title_id: int, db: DbSession) -> TitleDetail:
     except catalog.TitleNotFound as e:
         raise _err(e, 404) from e
     detail = _title_to_detail(t)
-    _TITLE_DETAIL_CACHE[title_id] = (detail.model_dump(), now + _TITLES_CACHE_TTL_SECONDS)
+    _cache_put(_TITLE_DETAIL_CACHE, title_id, (detail.model_dump(), now + _TITLES_CACHE_TTL_SECONDS))
     return detail
 
 
@@ -159,7 +181,7 @@ async def get_season(title_id: int, season_number: int, db: DbSession) -> Season
     except (catalog.TitleNotFound, catalog.SeasonNotFound) as e:
         raise _err(e, 404) from e
     detail = SeasonDetail.model_validate(s)
-    _SEASON_DETAIL_CACHE[key] = (detail.model_dump(), now + _TITLES_CACHE_TTL_SECONDS)
+    _cache_put(_SEASON_DETAIL_CACHE, key, (detail.model_dump(), now + _TITLES_CACHE_TTL_SECONDS))
     return detail
 
 
@@ -175,6 +197,33 @@ async def get_episode(
     except (catalog.TitleNotFound, catalog.SeasonNotFound, catalog.EpisodeNotFound) as e:
         raise _err(e, 404) from e
     return EpisodeRead.model_validate(ep)
+
+
+@router.get("/{title_id}/similar", response_model=list[TitleSummary])
+async def similar_titles(
+    title_id: int,
+    db: DbSession,
+    limit: int = Query(20, ge=1, le=40),
+) -> list[TitleSummary]:
+    """"More Like This" — public like the trailer endpoint (it's marketing:
+    shown on detail pages before login). Published, non-deleted titles sharing
+    at least one genre with this one, busiest first."""
+    key = (title_id, limit)
+    now = time.monotonic()
+    cached = _SIMILAR_CACHE.get(key)
+    if cached and cached[1] > now:
+        return [TitleSummary.model_validate(item) for item in cached[0]]
+    try:
+        items = await catalog.similar_titles(db, title_id, limit=limit)
+    except catalog.TitleNotFound as e:
+        raise _err(e, 404) from e
+    summaries = [TitleSummary.model_validate(t) for t in items]
+    _cache_put(
+        _SIMILAR_CACHE,
+        key,
+        ([s.model_dump() for s in summaries], now + _TITLES_CACHE_TTL_SECONDS),
+    )
+    return summaries
 
 
 @router.get("/{title_id}/trailer")
