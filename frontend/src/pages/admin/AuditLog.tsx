@@ -24,7 +24,7 @@ export default function AuditLog() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {((data as any).items as any[]).map((e) => (
+              {data.items.map((e) => (
                 <tr key={e.id} className="hover:bg-white/5">
                   <td className="px-4 py-2 font-mono text-white/70">
                     {new Date(e.created_at).toLocaleString()}

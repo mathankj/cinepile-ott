@@ -21,7 +21,7 @@ export default function AdminDashboard() {
           value={titlesQ.data?.total ?? "—"}
           to="/admin/titles"
         />
-        <Stat label="Recent audit entries" value={(auditQ.data as any)?.total ?? "—"} to="/admin/audit" />
+        <Stat label="Recent audit entries" value={auditQ.data?.total ?? "—"} to="/admin/audit" />
         <Stat
           label="Quick action"
           value="+ New title"
@@ -31,7 +31,7 @@ export default function AdminDashboard() {
 
       <h2 className="mt-12 mb-4 text-[1.4rem] font-semibold">Recent activity</h2>
       <ul className="divide-y divide-white/10 rounded border border-white/10 bg-[var(--color-bg-elevated)]">
-        {((auditQ.data as any)?.items ?? []).slice(0, 8).map((e: any) => (
+        {(auditQ.data?.items ?? []).slice(0, 8).map((e) => (
           <li key={e.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
             <div className="flex gap-3">
               <span className="font-mono text-white/50">{new Date(e.created_at).toLocaleString()}</span>

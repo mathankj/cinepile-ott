@@ -2,6 +2,11 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Plus } from "lucide-react";
 import { catalog } from "../../api";
+import type { TitleStatus, TitleSummary } from "../../api/types";
+
+// The public list endpoint returns TitleSummary; status only appears on
+// detail responses, so it's optional here until an admin list endpoint exists.
+type AdminTitleRow = TitleSummary & { status?: TitleStatus };
 
 export default function AdminTitlesList() {
   const { data, isLoading } = useQuery({
@@ -36,7 +41,7 @@ export default function AdminTitlesList() {
                 <tr key={t.id} className="hover:bg-white/5">
                   <td className="px-4 py-3 font-medium">{t.title}</td>
                   <td className="px-4 py-3 text-white/70">{t.type}</td>
-                  <td className="px-4 py-3 text-white/70">{(t as any).status ?? "—"}</td>
+                  <td className="px-4 py-3 text-white/70">{(t as AdminTitleRow).status ?? "—"}</td>
                   <td className="px-4 py-3">{t.is_free ? <span className="text-[var(--color-brand)]">FREE</span> : "—"}</td>
                   <td className="px-4 py-3 text-white/70">{t.release_year ?? "—"}</td>
                   <td className="px-4 py-3 text-right">

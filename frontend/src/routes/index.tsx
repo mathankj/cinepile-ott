@@ -107,7 +107,7 @@ function ProfileGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-export const router = createBrowserRouter([
+const router = createBrowserRouter([
   // Auth routes — rendered WITHOUT AppLayout so the Netflix-style full-bleed
   // hero card has no navbar/footer chrome around it.
   { path: "/login", element: lazyRoute(Login) },

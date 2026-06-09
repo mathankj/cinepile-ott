@@ -26,6 +26,7 @@ export default async function globalSetup() {
     throw new Error(
       `Backend not reachable at ${BACKEND}. Start it with: ` +
         `cd backend && .venv/Scripts/python.exe -m uvicorn app.main:app --port 8000`,
+      { cause: e },
     );
   }
   await api.get(`${BACKEND}/readyz`);

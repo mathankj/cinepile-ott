@@ -228,4 +228,7 @@ async def play_movie(title_id: int, db: DbSession, user: CurrentUser) -> Playbac
         raise _err(e, status.HTTP_402_PAYMENT_REQUIRED) from e
     except playback.NoPlayableAsset as e:
         raise _err(e, 409) from e
+    # Ticket issuance bumps view_count; drop this title's cached detail so the
+    # bump is visible. One key per play — the rest of the cache survives.
+    _TITLE_DETAIL_CACHE.pop(title_id, None)
     return PlaybackTicket(**ticket)

@@ -40,15 +40,18 @@ from app.services import audit as audit_svc
 
 
 def _bust_catalog_caches() -> None:
-    """Clear the public list + genre caches after any catalog mutation.
-    Imports are lazy so this file doesn't depend on the public router order.
-    Without this, admins watch stale data persist for up to 60s after a
-    publish / archive / delete."""
+    """Clear every public read cache after any catalog mutation: title list +
+    detail + season detail, genres, and the home rows (which embed title
+    summaries). Imports are lazy so this file doesn't depend on the public
+    router order. Without this, users watch stale data persist for up to
+    5 minutes after a publish / upload / edit."""
     from app.api.v1.titles import invalidate_titles_cache
     from app.api.v1.home import invalidate_genres_cache
+    from app.services.browse import invalidate_home_cache
 
     invalidate_titles_cache()
     invalidate_genres_cache()
+    invalidate_home_cache()
 
 router = APIRouter()
 
@@ -153,6 +156,7 @@ async def schedule_title(
         raise _err(e, 404) from e
     except svc.InvalidLifecycle as e:
         raise _err(e, 400) from e
+    _bust_catalog_caches()
     from app.api.v1.titles import _title_to_detail
 
     return _title_to_detail(t)
@@ -206,6 +210,7 @@ async def create_season(
         raise _err(e, 404) from e
     except svc.TypeMismatch as e:
         raise _err(e, 409) from e
+    _bust_catalog_caches()
     return SeasonDetail.model_validate(s)
 
 
@@ -223,6 +228,7 @@ async def update_season(
         )
     except svc.SeasonNotFound as e:
         raise _err(e, 404) from e
+    _bust_catalog_caches()
     return SeasonDetail.model_validate(s)
 
 
@@ -234,6 +240,7 @@ async def delete_season(
         await svc.delete_season(db, actor, season_id, request_id=_req_id(request))
     except svc.SeasonNotFound as e:
         raise _err(e, 404) from e
+    _bust_catalog_caches()
 
 
 # ---- Episodes ----------------------------------------------------------------
@@ -259,6 +266,7 @@ async def create_episode(
         raise _err(e, 404) from e
     except svc.InvalidLifecycle as e:
         raise _err(e, 400) from e
+    _bust_catalog_caches()
     return EpisodeRead.model_validate(ep)
 
 
@@ -276,6 +284,7 @@ async def update_episode(
         )
     except svc.EpisodeNotFound as e:
         raise _err(e, 404) from e
+    _bust_catalog_caches()
     return EpisodeRead.model_validate(ep)
 
 
@@ -287,6 +296,7 @@ async def publish_episode(
         ep = await svc.publish_episode(db, actor, episode_id, request_id=_req_id(request))
     except svc.EpisodeNotFound as e:
         raise _err(e, 404) from e
+    _bust_catalog_caches()
     return EpisodeRead.model_validate(ep)
 
 
@@ -298,6 +308,7 @@ async def delete_episode(
         await svc.delete_episode(db, actor, episode_id, request_id=_req_id(request))
     except svc.EpisodeNotFound as e:
         raise _err(e, 404) from e
+    _bust_catalog_caches()
 
 
 # ---- Genres ------------------------------------------------------------------
@@ -311,6 +322,7 @@ async def create_genre(
         g = await svc.create_genre(db, actor, payload.model_dump(), request_id=_req_id(request))
     except svc.GenreSlugInUse as e:
         raise _err(e, 409) from e
+    _bust_catalog_caches()
     return GenreRead.model_validate(g)
 
 
@@ -580,6 +592,7 @@ async def upload_title_video(
         after={"storage_url": stored_ref, "key": key},
         request_id=_req_id(request),
     )
+    _bust_catalog_caches()
     return {
         "title_id": title.id,
         "key": key,
@@ -628,6 +641,7 @@ async def upload_episode_video(
         after={"storage_url": stored_ref, "key": key},
         request_id=_req_id(request),
     )
+    _bust_catalog_caches()
     return {
         "episode_id": ep.id,
         "key": key,
@@ -751,6 +765,7 @@ async def _store_subtitle(
         after={"language": language, "kind": kind, "storage_url": stored_ref, "key": key},
         request_id=_req_id(request),
     )
+    _bust_catalog_caches()
 
     return {
         "id": track.id,
@@ -853,6 +868,7 @@ async def delete_subtitle(
         entity_id=subtitle_id,
         request_id=_req_id(request),
     )
+    _bust_catalog_caches()
 
 
 # ---- Tracks (audio + subtitle) ----------------------------------------------
@@ -872,6 +888,7 @@ async def replace_audio_tracks(
         )
     except svc.TitleNotFound as e:
         raise _err(e, 404) from e
+    _bust_catalog_caches()
     return {"updated": True, "count": len(payload.tracks)}
 
 
@@ -889,6 +906,7 @@ async def replace_subtitle_tracks(
         )
     except svc.TitleNotFound as e:
         raise _err(e, 404) from e
+    _bust_catalog_caches()
     return {"updated": True, "count": len(payload.tracks)}
 
 

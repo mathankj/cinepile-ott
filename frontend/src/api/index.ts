@@ -4,9 +4,11 @@
  */
 import { api } from "./client";
 import type {
+  AuditListResponse,
   AuthSuccess,
   ContinueWatchingItem,
   Episode,
+  Genre,
   HistoryItem,
   HomeRow,
   Plan,
@@ -21,6 +23,8 @@ import type {
   TitleListResponse,
   TitleSummary,
   TokenPair,
+  UserListResponse,
+  UserRead,
   WatchlistItemRead,
 } from "./types";
 
@@ -39,6 +43,13 @@ export const auth = {
   logout: (refresh_token: string) => api.post("/v1/auth/logout", { refresh_token }),
 
   me: () => api.get<AuthSuccess["user"]>("/v1/auth/me").then((r) => r.data),
+
+  // Returns a fresh TokenPair — changing the password revokes every other
+  // session, so the caller must replace its stored tokens with these.
+  changePassword: (current_password: string, new_password: string) =>
+    api
+      .post<TokenPair>("/v1/auth/change-password", { current_password, new_password })
+      .then((r) => r.data),
 };
 
 // ---------- Catalog ----------
@@ -78,6 +89,11 @@ export const catalog = {
       .get<{ title_id: number; trailer_url: string; source: string }>(
         `/v1/titles/${titleId}/trailer`
       )
+      .then((r) => r.data),
+
+  similar: (titleId: number, limit = 20) =>
+    api
+      .get<TitleSummary[]>(`/v1/titles/${titleId}/similar`, { params: { limit } })
       .then((r) => r.data),
 
   genres: () =>
@@ -209,6 +225,13 @@ export const admin = {
   archiveTitle: (id: number) =>
     api.post<TitleDetail>(`/v1/admin/titles/${id}/archive`).then((r) => r.data),
   deleteTitle: (id: number) => api.delete(`/v1/admin/titles/${id}`),
+  restoreTitle: (id: number) =>
+    api.post<TitleDetail>(`/v1/admin/titles/${id}/restore`).then((r) => r.data),
+  // Soft-deleted titles for the admin "Deleted" filter.
+  deletedTitles: (page = 1, page_size = 50) =>
+    api
+      .get<TitleListResponse>("/v1/admin/titles-deleted", { params: { page, page_size } })
+      .then((r) => r.data),
   uploadTitleVideo: (id: number, file: File, onProgress?: (pct: number) => void) => {
     const data = new FormData();
     data.append("file", file);
@@ -226,10 +249,24 @@ export const admin = {
   },
 
   // Seasons + Episodes
+  // Admin view of a series' structure: every season with every episode,
+  // regardless of status (the public season endpoint hides drafts).
+  listSeasons: (titleId: number) =>
+    api
+      .get<SeasonDetail[]>(`/v1/admin/titles/${titleId}/seasons`)
+      .then((r) => r.data),
   createSeason: (titleId: number, body: { season_number: number; name?: string }) =>
-    api.post(`/v1/admin/titles/${titleId}/seasons`, body).then((r) => r.data),
+    api.post<SeasonDetail>(`/v1/admin/titles/${titleId}/seasons`, body).then((r) => r.data),
+  updateSeason: (seasonId: number, body: Record<string, unknown>) =>
+    api.patch<SeasonDetail>(`/v1/admin/seasons/${seasonId}`, body).then((r) => r.data),
+  deleteSeason: (seasonId: number) => api.delete(`/v1/admin/seasons/${seasonId}`),
   createEpisode: (seasonId: number, body: Record<string, unknown>) =>
-    api.post(`/v1/admin/seasons/${seasonId}/episodes`, body).then((r) => r.data),
+    api.post<Episode>(`/v1/admin/seasons/${seasonId}/episodes`, body).then((r) => r.data),
+  updateEpisode: (episodeId: number, body: Record<string, unknown>) =>
+    api.patch<Episode>(`/v1/admin/episodes/${episodeId}`, body).then((r) => r.data),
+  publishEpisode: (episodeId: number) =>
+    api.post<Episode>(`/v1/admin/episodes/${episodeId}/publish`).then((r) => r.data),
+  deleteEpisode: (episodeId: number) => api.delete(`/v1/admin/episodes/${episodeId}`),
   uploadEpisodeVideo: (episodeId: number, file: File, onProgress?: (pct: number) => void) => {
     const data = new FormData();
     data.append("file", file);
@@ -273,6 +310,16 @@ export const admin = {
   },
   deleteSubtitle: (subtitleId: number) => api.delete(`/v1/admin/subtitles/${subtitleId}`),
 
+  // Genres
+  listGenres: () =>
+    api.get<Genre[]>("/v1/admin/genres").then((r) => r.data),
+  createGenre: (body: { slug: string; name: string; kind?: string }) =>
+    api.post<Genre>("/v1/admin/genres", body).then((r) => r.data),
+  updateGenre: (id: number, body: { slug?: string; name?: string; kind?: string }) =>
+    api.patch<Genre>(`/v1/admin/genres/${id}`, body).then((r) => r.data),
+  // 409 if any title still references the genre.
+  deleteGenre: (id: number) => api.delete(`/v1/admin/genres/${id}`),
+
   // Audit
   audit: (params: {
     entity_type?: string;
@@ -280,11 +327,14 @@ export const admin = {
     actor_user_id?: number;
     page?: number;
     page_size?: number;
-  } = {}) => api.get("/v1/admin/audit", { params }).then((r) => r.data),
+  } = {}) =>
+    api.get<AuditListResponse>("/v1/admin/audit", { params }).then((r) => r.data),
 
   // Users
   users: (page = 1, page_size = 50) =>
-    api.get("/v1/admin/users", { params: { page, page_size } }).then((r) => r.data),
+    api
+      .get<UserListResponse>("/v1/admin/users", { params: { page, page_size } })
+      .then((r) => r.data),
   changeUserRole: (id: number, role: string) =>
-    api.patch(`/v1/admin/users/${id}/role`, { role }).then((r) => r.data),
+    api.patch<UserRead>(`/v1/admin/users/${id}/role`, { role }).then((r) => r.data),
 };

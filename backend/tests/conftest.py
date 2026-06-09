@@ -22,6 +22,9 @@ os.environ.setdefault("APP_ENV", "dev")
 # Force mock billing in tests — never hit Razorpay's API even if .env has live keys
 os.environ["BILLING_PROVIDER"] = "mock"
 os.environ["BILLING_MODE"] = "orders"  # default; razorpay tests opt into other modes
+# The demo .env disables the subscription gate; tests assert real gating
+# behaviour, so force it back on here. Demo-mode tests monkeypatch settings.
+os.environ["BILLING_GATE_ENABLED"] = "true"
 os.environ.pop("RAZORPAY_KEY_ID", None)
 os.environ.pop("RAZORPAY_KEY_SECRET", None)
 
@@ -366,7 +369,9 @@ def _clear_module_caches():
     from app.api.v1 import home as _home_router, titles as _titles_router
     from app.services import browse as _browse_svc
 
-    _titles_router._TITLES_CACHE.clear()
+    # invalidate_titles_cache() covers the list cache AND the per-title /
+    # per-season detail caches, so new caches added there stay covered here.
+    _titles_router.invalidate_titles_cache()
     _home_router._GENRES_CACHE = None  # noqa: SLF001 — test cleanup needs internals
     _browse_svc._HOME_CACHE.clear()
     yield

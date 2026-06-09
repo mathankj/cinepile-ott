@@ -28,7 +28,7 @@ export default function AdminUsers() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {(data as any).items.map((u: any) => (
+              {data.items.map((u) => (
                 <tr key={u.id} className="hover:bg-white/5">
                   <td className="px-4 py-2.5 font-medium">{u.email}</td>
                   <td className="px-4 py-2.5 text-white/70">{u.full_name ?? "—"}</td>

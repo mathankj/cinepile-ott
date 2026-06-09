@@ -62,6 +62,17 @@ export default function VideoPlayer({
   const [subtitleTracks, setSubtitleTracks] = useState<MediaPlaylist[]>([]);
   const [currentSubtitle, setCurrentSubtitle] = useState<number>(-1); // -1 = off
 
+  // Reset the capability menus when the source changes, during render rather
+  // than in the effect — native/MP4 sources never repopulate them, and a
+  // stale quality list from the previous source would otherwise linger.
+  const [prevSrc, setPrevSrc] = useState(src);
+  if (prevSrc !== src) {
+    setPrevSrc(src);
+    setQualities([]);
+    setAudioTracks([]);
+    setSubtitleTracks([]);
+  }
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !src) return;
@@ -142,11 +153,9 @@ export default function VideoPlayer({
       hls.attachMedia(video);
     } else {
       // Native HLS (Safari) or direct MP4 — no per-track UI, but native
-      // captions menu still works.
+      // captions menu still works. The capability menus were already reset
+      // on the src change above.
       video.src = src;
-      setQualities([]);
-      setAudioTracks([]);
-      setSubtitleTracks([]);
     }
 
     return () => {

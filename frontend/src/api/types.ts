@@ -206,6 +206,42 @@ export type TokenPair = {
   expires_at: string;
 };
 
+export type UserRead = {
+  id: number;
+  email: string;
+  full_name: string | null;
+  role: "user" | "viewer" | "content_manager" | "admin";
+  is_active: boolean;
+  created_at: string;
+};
+
+export type UserListResponse = {
+  items: UserRead[];
+  page: number;
+  page_size: number;
+  total: number;
+};
+
+export type AuditEntry = {
+  id: number;
+  actor_user_id: number | null;
+  actor_role: string;
+  action: string;
+  entity_type: string;
+  entity_id: number;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  request_id: string | null;
+  created_at: string;
+};
+
+export type AuditListResponse = {
+  items: AuditEntry[];
+  page: number;
+  page_size: number;
+  total: number;
+};
+
 export type AuthSuccess = {
   tokens: TokenPair;
   user: {
