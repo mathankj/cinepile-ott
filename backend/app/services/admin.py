@@ -17,7 +17,7 @@ from app.models.episode import Episode, EpisodeAsset
 from app.models.genre import Genre
 from app.models.language import AudioTrack, SubtitleTrack
 from app.models.season import Season
-from app.models.title import Title, TitleAsset
+from app.models.title import Title, TitleAsset, titles_genres
 from app.models.user import User
 from app.services import audit as audit_svc
 
@@ -48,6 +48,21 @@ class EpisodeNotFound(Exception):
 class GenreSlugInUse(Exception):
     code = "genre_slug_in_use"
     message = "Genre slug already exists."
+
+
+class GenreNotFound(Exception):
+    code = "genre_not_found"
+    message = "Genre not found."
+
+
+class GenreInUse(Exception):
+    code = "genre_in_use"
+    message = "Genre is referenced by one or more titles and cannot be deleted."
+
+
+class LastAdmin(Exception):
+    code = "last_admin"
+    message = "Cannot remove the last remaining admin."
 
 
 class InvalidLifecycle(Exception):
@@ -248,6 +263,56 @@ async def soft_delete_title(
     )
 
 
+async def restore_title(
+    db: AsyncSession, actor: User, title_id: int, *, request_id: str | None = None
+) -> Title:
+    """Undo a soft-delete. Only deleted titles qualify — restoring a live
+    title is a 404 (the caller is confused about state, not authorisation)."""
+    title = await db.get(Title, title_id)
+    if title is None or title.deleted_at is None:
+        raise TitleNotFound
+    before = _title_snapshot(title)
+
+    title.deleted_at = None
+    # soft_delete forces status='removed'. Restoring straight back to
+    # 'removed' would leave the title invisible AND un-deleted (a confusing
+    # limbo), while restoring to 'published' would surprise-publish content.
+    # 'archived' is the safe middle: visible to admins, hidden from the public.
+    if title.status == "removed":
+        title.status = "archived"
+    await db.flush()
+
+    await audit_svc.record(
+        db, actor=actor, action="title.restore", entity_type="title",
+        entity_id=title.id, before=before, after=_title_snapshot(title),
+        request_id=request_id,
+    )
+    return title
+
+
+async def list_deleted_titles(
+    db: AsyncSession, *, page: int = 1, page_size: int = 50
+) -> tuple[list[Title], int]:
+    """Soft-deleted titles only, newest deletion first — feeds the admin
+    'Deleted' filter so restore targets are findable."""
+    page = max(1, page)
+    page_size = max(1, min(200, page_size))
+
+    where = Title.deleted_at.is_not(None)
+    stmt = (
+        select(Title)
+        .where(where)
+        # id desc as tie-break so ordering stays deterministic when two
+        # deletions land in the same instant (bulk scripts, tests).
+        .order_by(Title.deleted_at.desc(), Title.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    items = list((await db.scalars(stmt)).unique().all())
+    total = (await db.scalar(select(func.count()).select_from(Title).where(where))) or 0
+    return items, int(total)
+
+
 # ---- Seasons -----------------------------------------------------------------
 
 
@@ -302,6 +367,21 @@ async def delete_season(db, actor, season_id, *, request_id=None):
         db, actor=actor, action="season.delete", entity_type="season",
         entity_id=before["id"], before=before, request_id=request_id,
     )
+
+
+async def list_seasons_admin(db: AsyncSession, title_id: int) -> list[Season]:
+    """Full series structure for the admin editor: every season with every
+    episode regardless of status. The public season endpoint only serves
+    published content, so a freshly-created draft episode would be invisible
+    to the editor without this."""
+    title = await db.get(Title, title_id)
+    if title is None or title.deleted_at is not None:
+        raise TitleNotFound
+    if title.type != "series":
+        raise TypeMismatch
+    # Title.seasons is ordered by season_number and each Season.episodes by
+    # ordinal (relationship order_by) — no extra query needed.
+    return list(title.seasons)
 
 
 # ---- Episodes ----------------------------------------------------------------
@@ -423,6 +503,64 @@ async def list_genres_admin(db) -> list[Genre]:
     return list((await db.scalars(select(Genre).order_by(Genre.kind, Genre.name))).all())
 
 
+def _genre_snapshot(g: Genre) -> dict[str, Any]:
+    return {"id": g.id, "slug": g.slug, "name": g.name, "kind": g.kind}
+
+
+async def update_genre(
+    db: AsyncSession, actor: User, genre_id: int, patch: dict,
+    *, request_id: str | None = None,
+) -> Genre:
+    g = await db.get(Genre, genre_id)
+    if g is None:
+        raise GenreNotFound
+    # Slug must stay unique — check before assigning so we raise a clean 409
+    # instead of an IntegrityError mid-flush. Renaming to its own current slug
+    # is a no-op, not a collision.
+    new_slug = patch.get("slug")
+    if new_slug is not None and new_slug != g.slug:
+        existing = await db.scalar(select(Genre).where(Genre.slug == new_slug))
+        if existing is not None:
+            raise GenreSlugInUse
+
+    before = _genre_snapshot(g)
+    for k, v in patch.items():
+        if v is not None:
+            setattr(g, k, v)
+    await db.flush()
+
+    await audit_svc.record(
+        db, actor=actor, action="genre.update", entity_type="genre",
+        entity_id=g.id, before=before, after=_genre_snapshot(g),
+        request_id=request_id,
+    )
+    return g
+
+
+async def delete_genre(
+    db: AsyncSession, actor: User, genre_id: int, *, request_id: str | None = None
+) -> None:
+    g = await db.get(Genre, genre_id)
+    if g is None:
+        raise GenreNotFound
+    # Refuse to delete a genre still attached to titles — silently dropping
+    # it would rewrite those titles' metadata as a side effect. The admin
+    # must detach (or accept) explicitly first.
+    in_use = await db.scalar(
+        select(func.count()).select_from(titles_genres).where(titles_genres.c.genre_id == g.id)
+    )
+    if in_use:
+        raise GenreInUse
+
+    before = _genre_snapshot(g)
+    await db.delete(g)
+    await db.flush()
+    await audit_svc.record(
+        db, actor=actor, action="genre.delete", entity_type="genre",
+        entity_id=before["id"], before=before, request_id=request_id,
+    )
+
+
 # ---- Audio + subtitle tracks (replace-all semantics) -------------------------
 
 
@@ -481,6 +619,17 @@ async def change_user_role(
     before = {"id": target.id, "email": target.email, "role": target.role}
     if new_role not in {"user", "viewer", "content_manager", "admin"}:
         raise InvalidLifecycle  # repurposed — route maps to 400
+
+    # Last-admin protection: demoting the only remaining admin would lock
+    # everyone out of user management permanently (only admins can grant the
+    # admin role). Block exactly that case — demoting an admin while another
+    # admin exists is still allowed.
+    if target.role == "admin" and new_role != "admin":
+        admin_count = (
+            await db.scalar(select(func.count()).select_from(User).where(User.role == "admin"))
+        ) or 0
+        if admin_count <= 1:
+            raise LastAdmin
 
     target.role = new_role
     # Bump session_version so existing JWTs become invalid (forces re-login with fresh role claim)

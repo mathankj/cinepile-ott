@@ -24,6 +24,7 @@ from app.schemas.title import (
     EpisodeUpdate,
     GenreCreate,
     GenreRead,
+    GenreUpdate,
     SeasonCreate,
     SeasonDetail,
     SeasonUpdate,
@@ -31,7 +32,9 @@ from app.schemas.title import (
     SubtitleTracksReplace,
     TitleCreate,
     TitleDetail,
+    TitleListResponse,
     TitleSchedule,
+    TitleSummary,
     TitleUpdate,
 )
 from app.schemas.user import UserRead
@@ -86,6 +89,29 @@ async def create_title(
     from app.api.v1.titles import _title_to_detail
 
     return _title_to_detail(t)
+
+
+# NOTE: registered before the /titles/{title_id} routes on purpose. FastAPI
+# matches routes in registration order, and "titles-deleted" must never be
+# swallowed by a path-param route if the /titles layout ever grows a
+# catch-all segment.
+@router.get("/titles-deleted", response_model=TitleListResponse)
+async def list_deleted_titles(
+    db: DbSession,
+    _: ContentRoleUser,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+) -> TitleListResponse:
+    """Soft-deleted titles (newest deletion first) — the admin 'Deleted'
+    filter. Same response shape as the public title list so the frontend can
+    reuse its list rendering."""
+    items, total = await svc.list_deleted_titles(db, page=page, page_size=page_size)
+    return TitleListResponse(
+        items=[TitleSummary.model_validate(t) for t in items],
+        page=page,
+        page_size=page_size,
+        total=total,
+    )
 
 
 @router.get("/titles/{title_id}", response_model=TitleDetail)
@@ -187,6 +213,23 @@ async def delete_title(
     _bust_catalog_caches()
 
 
+@router.post("/titles/{title_id}/restore", response_model=TitleDetail)
+async def restore_title(
+    title_id: int, request: Request, db: DbSession, actor: ContentRoleUser
+) -> TitleDetail:
+    """Undo a soft-delete. 404 unless the title exists AND is currently
+    deleted. Restored titles land in 'archived' (admin-visible, public-hidden)
+    so nothing surprise-publishes."""
+    try:
+        t = await svc.restore_title(db, actor, title_id, request_id=_req_id(request))
+    except svc.TitleNotFound as e:
+        raise _err(e, 404) from e
+    _bust_catalog_caches()
+    from app.api.v1.titles import _title_to_detail
+
+    return _title_to_detail(t)
+
+
 # ---- Seasons -----------------------------------------------------------------
 
 
@@ -212,6 +255,22 @@ async def create_season(
         raise _err(e, 409) from e
     _bust_catalog_caches()
     return SeasonDetail.model_validate(s)
+
+
+@router.get("/titles/{title_id}/seasons", response_model=list[SeasonDetail])
+async def list_seasons_for_admin(
+    title_id: int, db: DbSession, actor: ContentRoleUser
+) -> list[SeasonDetail]:
+    """Admin view of a series' full structure: every season with every
+    episode regardless of status. The public season endpoint serves published
+    content only, so the editor needs this to show drafts."""
+    try:
+        seasons = await svc.list_seasons_admin(db, title_id)
+    except svc.TitleNotFound as e:
+        raise _err(e, 404) from e
+    except svc.TypeMismatch as e:
+        raise _err(e, 409) from e
+    return [SeasonDetail.model_validate(s) for s in seasons]
 
 
 @router.patch("/seasons/{season_id}", response_model=SeasonDetail)
@@ -330,6 +389,41 @@ async def create_genre(
 async def list_admin_genres(db: DbSession, _: ContentRoleUser) -> list[GenreRead]:
     items = await svc.list_genres_admin(db)
     return [GenreRead.model_validate(g) for g in items]
+
+
+@router.patch("/genres/{genre_id}", response_model=GenreRead)
+async def update_genre(
+    genre_id: int,
+    payload: GenreUpdate,
+    request: Request,
+    db: DbSession,
+    actor: ContentRoleUser,
+) -> GenreRead:
+    try:
+        g = await svc.update_genre(
+            db, actor, genre_id, payload.model_dump(exclude_unset=True), request_id=_req_id(request)
+        )
+    except svc.GenreNotFound as e:
+        raise _err(e, 404) from e
+    except svc.GenreSlugInUse as e:
+        raise _err(e, 409) from e
+    _bust_catalog_caches()
+    return GenreRead.model_validate(g)
+
+
+@router.delete("/genres/{genre_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_genre(
+    genre_id: int, request: Request, db: DbSession, actor: ContentRoleUser
+) -> None:
+    """Delete an unused genre. 409 genre_in_use if any title still references
+    it — deleting would silently rewrite those titles' metadata."""
+    try:
+        await svc.delete_genre(db, actor, genre_id, request_id=_req_id(request))
+    except svc.GenreNotFound as e:
+        raise _err(e, 404) from e
+    except svc.GenreInUse as e:
+        raise _err(e, 409) from e
+    _bust_catalog_caches()
 
 
 # ---- Video upload (R2) ------------------------------------------------------
@@ -958,6 +1052,9 @@ async def change_user_role(
             400,
             detail={"error": {"code": "invalid_role", "message": "Role must be user, viewer, content_manager, or admin."}},
         ) from e
+    except svc.LastAdmin as e:
+        # Demoting the only admin would lock everyone out of user management.
+        raise _err(e, 409) from e
     return UserRead.model_validate(u)
 
 

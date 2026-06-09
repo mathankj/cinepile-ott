@@ -287,3 +287,14 @@ class GenreCreate(BaseModel):
     slug: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9-]+$")
     name: str = Field(min_length=1, max_length=128)
     kind: Literal["primary", "sub", "mood"] = "primary"
+
+
+class GenreUpdate(BaseModel):
+    """Partial genre update — extra='forbid' blocks mass-assignment, same as
+    the other *Update schemas."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    slug: str | None = Field(default=None, min_length=1, max_length=64, pattern=r"^[a-z0-9-]+$")
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    kind: Literal["primary", "sub", "mood"] | None = None
