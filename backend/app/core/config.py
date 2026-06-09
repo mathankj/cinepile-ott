@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     storage_bucket: str | None = None
     storage_region: str | None = None
 
+    # Demo mode: when False, the playback service skips the subscription check
+    # entirely so any logged-in user can play any title. Flip to True post-demo
+    # once real billing is wired up.
+    billing_gate_enabled: bool = True
+
     # Razorpay
     razorpay_key_id: str | None = None
     razorpay_key_secret: str | None = None

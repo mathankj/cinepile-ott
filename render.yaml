@@ -22,6 +22,10 @@ services:
         value: "7"
       - key: BILLING_PROVIDER
         value: mock
+      # Demo: any logged-in user can play any title. Flip to "true" post-demo
+      # once real payment integration is wired up.
+      - key: BILLING_GATE_ENABLED
+        value: "false"
       - key: ALLOWED_ORIGINS
         value: https://cinepile-web.onrender.com
       - key: DATABASE_URL

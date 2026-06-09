@@ -142,10 +142,13 @@ async def _ensure_entitled(
     """Subscription gate, with free-content bypass.
 
     Order of checks:
+      0. If BILLING_GATE_ENABLED is False (demo mode) → allow everything.
       1. If episode.is_free → allow (first-episode-free pattern).
       2. If title.is_free → allow (free movie or wholly-free series).
       3. Else → require an active subscription.
     """
+    if not get_settings().billing_gate_enabled:
+        return
     if episode is not None and episode.is_free:
         return
     if title is not None and title.is_free:
