@@ -62,13 +62,17 @@ export function TitleCard({
   });
 
   // Prefetch detail on hover — runs at most once per card per session because
-  // TanStack Query dedupes via the queryKey.
+  // TanStack Query dedupes via the queryKey. Alongside the data, we also warm
+  // the Watch page's JS chunk (player + hls.js) so clicking Play starts the
+  // video immediately instead of downloading ~500 KB first. The browser
+  // dedupes repeat dynamic imports, so this is free after the first hover.
   function prefetch() {
     qc.prefetchQuery({
       queryKey: ["title", title.id],
       queryFn: () => catalog.detail(title.id),
       staleTime: 60_000,
     });
+    void import("../../pages/Watch");
   }
 
   // Hover-overlay button handlers. Each one stops propagation so the outer

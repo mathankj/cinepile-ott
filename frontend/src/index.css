@@ -59,6 +59,14 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
+/* TitleRow card widths by breakpoint (Netflix sizes: 160/210/240/280/300).
+   Lives here once instead of an inline <style> tag per row instance. */
+.title-row { --card-w: 160px; }
+@media (min-width: 640px) { .title-row { --card-w: 210px; } }
+@media (min-width: 1024px) { .title-row { --card-w: 240px; } }
+@media (min-width: 1280px) { .title-row { --card-w: 280px; } }
+@media (min-width: 1920px) { .title-row { --card-w: 300px; } }
+
 /* Hover-reveal overlay (TitleCard action buttons) is desktop-only. On touch
    devices, CSS :hover stays "on" forever after the first tap, which would
    leave the overlay permanently visible over every card the user has tapped.

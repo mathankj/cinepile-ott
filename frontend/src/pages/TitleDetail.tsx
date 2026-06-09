@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { Play, Plus, Check, ThumbsUp, ThumbsDown, Heart } from "lucide-react";
 import { catalog, me } from "../api";
+import { TitleRow } from "../components/title/TitleRow";
 import { useAuthStore } from "../stores/auth";
 
 export default function TitleDetail() {
@@ -28,6 +29,14 @@ export default function TitleDetail() {
     enabled: isLoggedIn,
   });
 
+  // "More like this" — best-effort; on error or empty list we render nothing.
+  const similarQ = useQuery({
+    queryKey: ["similar", titleId],
+    queryFn: () => catalog.similar(titleId),
+    enabled: Number.isFinite(titleId),
+    retry: false,
+  });
+
   const inList = watchlist.data?.items.some((w) => w.title.id === titleId);
   const currentReaction = reactions.data?.items.find((r) => r.title.id === titleId)?.kind;
 
@@ -49,7 +58,7 @@ export default function TitleDetail() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["reactions"] }),
   });
 
-  if (isLoading) return <div className="p-8 text-white/60">Loading…</div>;
+  if (isLoading) return <TitleDetailSkeleton />;
   if (!title) return <div className="p-8 text-white/60">Title not found.</div>;
 
   return (
@@ -106,14 +115,12 @@ export default function TitleDetail() {
             </Link>
           )}
           {title.trailer_url && (
-            <a
-              href={title.trailer_url}
-              target="_blank"
-              rel="noreferrer"
+            <Link
+              to={`/watch/trailer/${title.id}`}
               className="inline-flex items-center gap-2 rounded bg-white/15 px-7 py-3 font-semibold text-white hover:bg-white/25"
             >
               Watch Trailer
-            </a>
+            </Link>
           )}
           {isLoggedIn && (
             <>
@@ -191,6 +198,51 @@ export default function TitleDetail() {
             </ul>
           </section>
         )}
+      </div>
+
+      {/* More like this — full-width row below the detail column. TitleRow
+          already renders nothing for an empty list; request errors leave
+          similarQ.data undefined, so the section simply doesn't appear. */}
+      {similarQ.data && similarQ.data.length > 0 && (
+        <div className="pb-8">
+          <TitleRow title="More like this" items={similarQ.data} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Loading skeleton shaped like the real page (backdrop hero + title bar +
+ * meta chips + synopsis lines + CTA row) so deep links don't layout-pop when
+ * the data lands. Reuses the same shimmer treatment as the Home skeleton.
+ */
+function TitleDetailSkeleton() {
+  return (
+    <div className="animate-fade-in">
+      {/* Same height as the real backdrop hero */}
+      <div className="skeleton-shimmer h-[40vh] md:h-[60vh] w-full" />
+      <div className="-mt-32 md:-mt-48 relative z-10 px-4 md:px-8 lg:px-[60px] pb-16 max-w-[1100px]">
+        {/* Title bar */}
+        <div className="skeleton-shimmer h-10 md:h-14 w-2/3 max-w-[420px] rounded" />
+        {/* Meta chips (rating / year / runtime) */}
+        <div className="mt-4 flex gap-3">
+          <div className="skeleton-shimmer h-5 w-12 rounded" />
+          <div className="skeleton-shimmer h-5 w-16 rounded" />
+          <div className="skeleton-shimmer h-5 w-20 rounded" />
+        </div>
+        {/* Synopsis lines */}
+        <div className="mt-5 max-w-[640px] space-y-2">
+          <div className="skeleton-shimmer h-4 w-full rounded" />
+          <div className="skeleton-shimmer h-4 w-5/6 rounded" />
+        </div>
+        {/* CTA buttons row (Play / Trailer / round icon buttons) */}
+        <div className="mt-6 flex items-center gap-3">
+          <div className="skeleton-shimmer h-12 w-32 rounded" />
+          <div className="skeleton-shimmer h-12 w-40 rounded" />
+          <div className="skeleton-shimmer h-12 w-12 rounded-full" />
+          <div className="skeleton-shimmer h-12 w-12 rounded-full" />
+        </div>
       </div>
     </div>
   );

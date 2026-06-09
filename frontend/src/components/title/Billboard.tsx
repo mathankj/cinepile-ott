@@ -37,6 +37,13 @@ export function Billboard({ title }: { title: TitleSummary | null }) {
     transition: { duration: 0.45, delay, ease: [0.5, 0, 0.1, 1] as [number, number, number, number] },
   });
 
+  // Warm the Watch page's JS chunk (player + hls.js) on hover/focus of the
+  // Play CTA, so clicking it starts playback immediately instead of first
+  // downloading ~500 KB. The browser dedupes repeat dynamic imports.
+  function prefetchWatchChunk() {
+    void import("../../pages/Watch");
+  }
+
   return (
     <section
       key={title.id}
@@ -52,6 +59,10 @@ export function Billboard({ title }: { title: TitleSummary | null }) {
           <img
             src={imgUrl}
             alt={title.title}
+            // This is the page's LCP element — tell the browser to fetch it
+            // ahead of other images and decode it off the main thread.
+            fetchPriority="high"
+            decoding="async"
             className="absolute inset-0 h-full w-full object-cover"
             onError={() => setImgFailed(true)}
           />
@@ -99,6 +110,8 @@ export function Billboard({ title }: { title: TitleSummary | null }) {
         <motion.div {...fgT(0.32)} className="mt-6 flex flex-wrap gap-3">
           <Link
             to={title.type === "series" ? `/title/${title.id}` : `/watch/title/${title.id}`}
+            onMouseEnter={prefetchWatchChunk}
+            onFocus={prefetchWatchChunk}
             className="group/btn inline-flex items-center gap-2 rounded bg-white px-7 py-3 text-base font-semibold text-black transition-all duration-200 hover:bg-white/85 active:scale-[0.98]"
           >
             <Play size={20} className="fill-current transition-transform duration-200 group-hover/btn:scale-110" /> {t("billboard.play")}

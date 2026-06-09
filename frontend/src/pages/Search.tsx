@@ -41,6 +41,10 @@ export default function Search() {
     queryFn: () => catalog.search(debounced),
     enabled: debounced.length >= 2,
     staleTime: 30_000,
+    // Keep showing the previous results while the next keystroke's query is
+    // in flight — without this every keystroke flashes the grid away and
+    // back, which reads as flicker.
+    placeholderData: (prev) => prev,
   });
 
   return (
@@ -62,13 +66,13 @@ export default function Search() {
         {debounced.length < 2 && (
           <p className="text-white/50">Type at least 2 characters.</p>
         )}
-        {debounced.length >= 2 && isFetching && (
+        {debounced.length >= 2 && isFetching && !data && (
           <p className="text-white/50">Searching…</p>
         )}
-        {data && data.length === 0 && !isFetching && (
+        {debounced.length >= 2 && data && data.length === 0 && !isFetching && (
           <p className="text-white/50">No matches for "{debounced}".</p>
         )}
-        {data && data.length > 0 && (
+        {debounced.length >= 2 && data && data.length > 0 && (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             {data.map((t) => (
               <TitleCard key={t.id} title={t} />
