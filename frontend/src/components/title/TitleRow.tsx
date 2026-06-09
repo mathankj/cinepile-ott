@@ -63,8 +63,11 @@ export function TitleRow({
   if (!items.length) return null;
 
   return (
+    // .title-row sets the responsive --card-w custom property — the rules
+    // live in src/index.css (one copy) instead of an inline <style> tag
+    // duplicated into the DOM by every row instance.
     <section
-      className="relative group/row mb-12"
+      className="title-row relative group/row mb-12"
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
@@ -110,13 +113,6 @@ export function TitleRow({
           <ChevronRight size={32} />
         </button>
       )}
-      <style>{`
-        section { --card-w: 160px; }
-        @media (min-width: 640px) { section { --card-w: 210px; } }
-        @media (min-width: 1024px) { section { --card-w: 240px; } }
-        @media (min-width: 1280px) { section { --card-w: 280px; } }
-        @media (min-width: 1920px) { section { --card-w: 300px; } }
-      `}</style>
     </section>
   );
 }

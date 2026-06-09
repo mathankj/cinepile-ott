@@ -10,7 +10,8 @@ import type { DrmConfig, SubtitleAsset } from "../../api/types";
  * - src: manifest URL (.m3u8) or MP4
  * - resumeAtSec: where to seek on play start
  * - onProgress: (positionSec, totalSec) — fires every ~10s while playing
- * - introStart/intoEnd: optional skip-intro markers
+ * - introStart/introEnd: optional skip-intro markers
+ * - recapStart/recapEnd: optional skip-recap markers (episodes)
  * - drm: optional DRM config (Widevine/PlayReady/FairPlay). When present,
  *        hls.js is initialised with emeEnabled + the matching license URL.
  *
@@ -24,6 +25,10 @@ type Props = {
   resumeAtSec?: number | null;
   introStartSec?: number | null;
   introEndSec?: number | null;
+  // Skip-recap markers — same mechanics as skip-intro, sourced from the
+  // episode's recap_start_sec / recap_end_sec fields.
+  recapStartSec?: number | null;
+  recapEndSec?: number | null;
   onProgress?: (positionSec: number, totalSec: number) => void;
   onEnded?: () => void;
   autoPlay?: boolean;
@@ -42,6 +47,8 @@ export default function VideoPlayer({
   resumeAtSec,
   introStartSec,
   introEndSec,
+  recapStartSec,
+  recapEndSec,
   onProgress,
   onEnded,
   autoPlay = true,
@@ -52,6 +59,7 @@ export default function VideoPlayer({
   const hlsRef = useRef<Hls | null>(null);
 
   const [showSkipIntro, setShowSkipIntro] = useState(false);
+  const [showSkipRecap, setShowSkipRecap] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Player capabilities — populated once hls.js parses the manifest.
@@ -89,6 +97,12 @@ export default function VideoPlayer({
       hls = new Hls({
         maxBufferLength: 30,
         maxMaxBufferLength: 60,
+        // Start downloading the first fragment while the manifest/levels are
+        // still being processed — shaves a round-trip off time-to-first-frame.
+        startFragPrefetch: true,
+        // Assume ~2 Mbps before any real measurements exist, so the ABR
+        // starts on a watchable rendition instead of the lowest one.
+        abrEwmaDefaultEstimate: 2_000_000,
         ...(useDrm
           ? {
               emeEnabled: true,
@@ -214,10 +228,29 @@ export default function VideoPlayer({
     return () => video.removeEventListener("timeupdate", onTime);
   }, [introStartSec, introEndSec]);
 
+  // Skip-recap button visibility — mirrors the skip-intro logic above.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !recapStartSec || !recapEndSec) return;
+    function onTime() {
+      const t = video!.currentTime;
+      setShowSkipRecap(t >= recapStartSec! && t < recapEndSec!);
+    }
+    video.addEventListener("timeupdate", onTime);
+    return () => video.removeEventListener("timeupdate", onTime);
+  }, [recapStartSec, recapEndSec]);
+
   function skipIntro() {
     if (videoRef.current && introEndSec) {
       videoRef.current.currentTime = introEndSec;
       setShowSkipIntro(false);
+    }
+  }
+
+  function skipRecap() {
+    if (videoRef.current && recapEndSec) {
+      videoRef.current.currentTime = recapEndSec;
+      setShowSkipRecap(false);
     }
   }
 
@@ -267,14 +300,29 @@ export default function VideoPlayer({
           />
         ))}
       </video>
-      {showSkipIntro && (
-        <button
-          type="button"
-          onClick={skipIntro}
-          className="absolute bottom-20 right-6 rounded border border-white/40 bg-black/80 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white hover:text-black"
-        >
-          Skip Intro
-        </button>
+      {/* Skip buttons share one stacked container so they never overlap if
+          intro and recap windows happen to coincide. */}
+      {(showSkipIntro || showSkipRecap) && (
+        <div className="absolute bottom-20 right-6 flex flex-col items-end gap-2">
+          {showSkipRecap && (
+            <button
+              type="button"
+              onClick={skipRecap}
+              className="rounded border border-white/40 bg-black/80 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white hover:text-black"
+            >
+              Skip Recap
+            </button>
+          )}
+          {showSkipIntro && (
+            <button
+              type="button"
+              onClick={skipIntro}
+              className="rounded border border-white/40 bg-black/80 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white hover:text-black"
+            >
+              Skip Intro
+            </button>
+          )}
+        </div>
       )}
 
       {hasSettings && (
