@@ -54,7 +54,7 @@ The "unified content" table — movies + series share this row.
 | **is_free** | **BOOLEAN NOT NULL DEFAULT false** | **When true, unsubscribed users can play this title. For series this means all episodes are free unless their own is_free overrides. For first-episode-free pattern, leave this False and set Episode.is_free on E1.** |
 | deleted_at | TIMESTAMPTZ NULL | soft-delete |
 
-Indexes: `slug` unique, `(status, published_at)` for default listings, `(type, status)`, `view_count DESC` for trending, GIN on `synopsis||title` (Postgres) for search (deferred — V1.5 uses LIKE).
+Indexes: `slug` unique, `(status, published_at)` for default listings, `(type, status)`, `view_count DESC` for trending — all three created by migration `4b8e21c0a9d7` and declared on the model (so the SQLite test DB gets them from metadata). GIN on `synopsis||title` (Postgres) for search (deferred — V1.5 uses LIKE).
 
 ### seasons
 
@@ -223,7 +223,7 @@ Per-user, per-watchable. Replaces V1's `watch_history`.
 | last_played_at | TIMESTAMPTZ NOT NULL | for continue-watching ordering |
 | **hidden_from_continue** | **BOOLEAN NOT NULL DEFAULT false** | **User explicitly removed via DELETE /me/continue-watching/{id}. Row stays so resume works if they come back via search. Reset to false on next progress write.** |
 
-Unique constraint: `(user_id, title_id, episode_id)`. SQLite treats NULL as distinct in unique indexes (same as Postgres). Indexes: `(user_id, last_played_at DESC)`.
+Unique constraint: `(user_id, title_id, episode_id)`. SQLite treats NULL as distinct in unique indexes (same as Postgres). Indexes: `(user_id, last_played_at DESC)` — created by migration `4b8e21c0a9d7` and declared on the model.
 
 Continue-watching query filters: `hidden_from_continue=false AND completed=false AND title.status='published' AND title.deleted_at IS NULL`.
 Full-history query (`/v1/me/history`) ignores hidden_from_continue and completed — shows everything the user has touched.
@@ -329,5 +329,9 @@ V1.5 introduces Alembic. Going forward, every schema change is a new migration; 
 | `67d9bd376b6d_webhook_events_table_for_idempotency` | New `webhook_events` table |
 | `117d9ec02783_watch_progress_hidden_from_continue` | `watch_progress.hidden_from_continue` |
 | `c599e9fb1787_is_free_flag_on_title_episode` | `titles.is_free`, `episodes.is_free` (with server_default backfill) |
+| `a145b5878354_profiles_table` | New `profiles` table |
+| `7666a2b6bf89_subtitle_storage_url_episode_id_label` | `subtitle_tracks.storage_url` / `.episode_id` / `.label` |
+| `ebef5353faa5_widen_profile_avatar_column_to_32_chars` | `profiles.avatar` VARCHAR(8) → VARCHAR(32) |
+| `4b8e21c0a9d7_hot_path_indexes_titles_watch_progress` | Hot-path indexes: `titles (status, published_at)`, `(type, status)`, `view_count DESC`; `watch_progress (user_id, last_played_at DESC)` |
 
 To apply against any environment: `cd backend && alembic upgrade head`.

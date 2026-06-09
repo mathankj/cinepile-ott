@@ -24,6 +24,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import String, and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import noload
 
 from app.models.genre import Genre
 from app.models.reaction import Reaction
@@ -45,7 +46,18 @@ _HOME_CACHE: dict[tuple[int | None, str | None], tuple[list[dict], float]] = {}
 # a longer TTL means a single warm session serves many tab switches without
 # re-hitting Neon. Admin writes invalidate via invalidate_home_cache().
 _HOME_CACHE_TTL_SECONDS = 300
-_HOME_CACHE_LOCK = asyncio.Lock()  # avoid stampede when many requests miss simultaneously
+# Hard cap on cache entries. Keys include user_id + country, so a large user
+# base (or a bot cycling country params) would otherwise grow this dict
+# forever. When full we evict the oldest insertion (dicts preserve insertion
+# order) — a cheap FIFO that's plenty for a TTL cache.
+_HOME_CACHE_MAX_ENTRIES = 512
+
+# One lock PER cache key instead of one global lock. With a global lock, a
+# cold build for user A (up to ~10 Neon round trips) blocked every other
+# user's home request — even cache HITS that merely wanted the double-check.
+# Per-key locks keep the stampede protection (only one build per key) without
+# serializing unrelated users behind it.
+_HOME_CACHE_LOCKS: dict[tuple[int | None, str | None], asyncio.Lock] = {}
 
 
 def invalidate_home_cache(user_id: int | None = None) -> None:
@@ -61,6 +73,13 @@ def invalidate_home_cache(user_id: int | None = None) -> None:
 
 ROW_DEFAULT_CAP = 20
 
+# Home rows project into TitleSummary, which reads ONLY scalar columns. The
+# Title model declares lazy="selectin" on 7 relationships (right for the
+# detail page), so without noload("*") every row query here fans out into ~7
+# extra SELECTs for genres/seasons/assets/tracks/windows/credits that nothing
+# reads — 16 SELECTs per anonymous home build instead of 2.
+_SUMMARY_ONLY = noload("*")
+
 
 def _published_filter():
     return and_(Title.status == "published", Title.deleted_at.is_(None))
@@ -70,6 +89,7 @@ async def _new_releases(db: AsyncSession, *, days: int = 30, limit: int = ROW_DE
     since = datetime.now(tz=timezone.utc) - timedelta(days=days)
     stmt = (
         select(Title)
+        .options(_SUMMARY_ONLY)
         .where(_published_filter(), Title.published_at.is_not(None), Title.published_at >= since)
         .order_by(Title.published_at.desc())
         .limit(limit)
@@ -82,6 +102,7 @@ async def _trending(db: AsyncSession, *, limit: int = ROW_DEFAULT_CAP) -> list[T
     V2 will move to a windowed sum from a daily metrics table."""
     stmt = (
         select(Title)
+        .options(_SUMMARY_ONLY)
         .where(_published_filter())
         .order_by(Title.view_count.desc(), Title.id.desc())
         .limit(limit)
@@ -94,6 +115,7 @@ async def _top_in_country(db: AsyncSession, country: str, *, limit: int = 10) ->
         return []
     stmt = (
         select(Title)
+        .options(_SUMMARY_ONLY)
         .where(
             _published_filter(),
             func.cast(Title.countries, String).like(f'%"{country}"%'),
@@ -118,6 +140,7 @@ async def _because_you_watched(
 
     stmt = (
         select(Title)
+        .options(_SUMMARY_ONLY)
         .join(titles_genres, titles_genres.c.title_id == Title.id)
         .where(
             _published_filter(),
@@ -152,6 +175,7 @@ async def _titles_by_genre(
 ) -> list[Title]:
     stmt = (
         select(Title)
+        .options(_SUMMARY_ONLY)
         .join(titles_genres, titles_genres.c.title_id == Title.id)
         .where(_published_filter(), titles_genres.c.genre_id == genre_id)
         .order_by(Title.view_count.desc(), Title.id.desc())
@@ -229,6 +253,7 @@ async def recommended_for_you(
     # the same title appearing twice when it matches two seed genres.
     stmt = (
         select(Title)
+        .options(_SUMMARY_ONLY)
         .join(titles_genres, titles_genres.c.title_id == Title.id)
         .where(
             _published_filter(),
@@ -244,6 +269,7 @@ async def recommended_for_you(
 async def _my_list_titles(db: AsyncSession, user: User, *, limit: int = 50) -> list[Title]:
     stmt = (
         select(Title)
+        .options(_SUMMARY_ONLY)
         .join(WatchlistItem, WatchlistItem.title_id == Title.id)
         .where(_published_filter(), WatchlistItem.user_id == user.id)
         .order_by(WatchlistItem.added_at.desc())
@@ -260,22 +286,35 @@ async def build_home(
 ) -> list[dict]:
     """Returns a list of dicts: [{kind, title, items: [Title]}, ...]
 
-    Cached per (user_id, country) for 60 s. The lock prevents thundering-herd
-    rebuilds when many requests miss the cache simultaneously."""
+    Cached per (user_id, country) for _HOME_CACHE_TTL_SECONDS. The per-key
+    lock prevents thundering-herd rebuilds for the SAME key while letting
+    other users' requests proceed in parallel."""
     cache_key = (user.id if user else None, country)
     now = time.monotonic()
     cached = _HOME_CACHE.get(cache_key)
     if cached and cached[1] > now:
         return cached[0]
 
-    async with _HOME_CACHE_LOCK:
-        # Double-check: someone may have populated it while we waited on the lock.
-        cached = _HOME_CACHE.get(cache_key)
-        if cached and cached[1] > time.monotonic():
-            return cached[0]
-        rows = await _build_home_uncached(db, user, country=country)
-        _HOME_CACHE[cache_key] = (rows, time.monotonic() + _HOME_CACHE_TTL_SECONDS)
-        return rows
+    # setdefault is atomic enough here (no await between lookup and insert),
+    # so concurrent misses for the same key all get the same Lock object.
+    lock = _HOME_CACHE_LOCKS.setdefault(cache_key, asyncio.Lock())
+    try:
+        async with lock:
+            # Double-check: someone may have populated it while we waited on the lock.
+            cached = _HOME_CACHE.get(cache_key)
+            if cached and cached[1] > time.monotonic():
+                return cached[0]
+            rows = await _build_home_uncached(db, user, country=country)
+            if cache_key not in _HOME_CACHE and len(_HOME_CACHE) >= _HOME_CACHE_MAX_ENTRIES:
+                # Evict oldest insertion so the dict can't grow without bound.
+                _HOME_CACHE.pop(next(iter(_HOME_CACHE)))
+            _HOME_CACHE[cache_key] = (rows, time.monotonic() + _HOME_CACHE_TTL_SECONDS)
+            return rows
+    finally:
+        # Drop the lock entry once the build settles so the lock dict can't
+        # grow unbounded either. Waiters already holding a reference to this
+        # Lock object are unaffected — they'll wake, hit the cache, and return.
+        _HOME_CACHE_LOCKS.pop(cache_key, None)
 
 
 async def _build_home_uncached(

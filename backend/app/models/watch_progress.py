@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -37,3 +37,14 @@ class WatchProgress(Base):
     # resume-if-they-search-again behaviour (Netflix's pattern); the
     # continue-watching list filters it out.
     hidden_from_continue: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+# Continue-watching and full-history both read "this user's rows, most recent
+# first" — this composite index serves that without a sort. Declared at model
+# level so the SQLite test DB (built from metadata) gets it; the matching
+# Alembic migration creates it on Postgres.
+Index(
+    "ix_watch_progress_user_id_last_played_at",
+    WatchProgress.user_id,
+    WatchProgress.last_played_at.desc(),
+)
