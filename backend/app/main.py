@@ -19,6 +19,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
+from starlette.middleware.gzip import GZipMiddleware
 
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
@@ -69,6 +70,33 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Compress JSON responses over 500 bytes — catalog lists shrink ~5-10x.
+    # Small responses are skipped (gzip overhead would outweigh the gain).
+    app.add_middleware(GZipMiddleware, minimum_size=500)
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        """Baseline browser-protection headers on every response.
+
+        - nosniff: stop browsers guessing content types (e.g. treating an
+          uploaded file as HTML).
+        - DENY framing: this is a JSON API + one dev page; nothing legitimate
+          embeds it in an iframe, so block clickjacking outright.
+        - no-referrer: never leak our URLs (which may carry tokens or ids)
+          to third-party hosts.
+        - HSTS: only meaningful (and only safe) over real HTTPS, so prod only —
+          setting it on localhost dev would break plain-http testing.
+        """
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        if settings.app_env == "prod":
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+        return response
 
     # Public catalog paths — safe to cache in the browser for a short window.
     # We deliberately exclude /v1/me/*, /v1/auth/*, /v1/admin/*, /v1/subscriptions/me,
@@ -176,8 +204,11 @@ def create_app() -> FastAPI:
     app.include_router(v1_admin.router, prefix="/v1/admin", tags=["admin"])
     app.include_router(v1_webhooks.router, prefix="/v1/webhooks", tags=["webhooks"])
     app.include_router(v1_payments.router, prefix="/v1/payments", tags=["payments"])
-    # Dev-only test checkout page (no /v1/ prefix; used by humans in a browser)
-    app.include_router(v1_test_checkout.router, tags=["dev"])
+    # Dev-only test checkout page (no /v1/ prefix; used by humans in a browser).
+    # Not registered in prod at all — same pattern as the /docs gating above.
+    # The real frontend uses Razorpay Checkout JS directly.
+    if settings.app_env != "prod":
+        app.include_router(v1_test_checkout.router, tags=["dev"])
 
     return app
 

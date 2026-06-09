@@ -4,11 +4,14 @@ Webhook endpoints.
 Razorpay sends webhooks on every subscription/payment state change. We:
   1. Verify the HMAC-SHA256 signature against RAZORPAY_WEBHOOK_SECRET
      (constant-time compare).
-  2. Idempotency-check via the `X-Razorpay-Event-Id` header against the
+  2. Require `created_at` in the body and the `X-Razorpay-Event-Id` header —
+     without them the replay window and idempotency checks below would be
+     silently skipped, so we reject (400) instead of processing.
+  3. Reject events older than 10 minutes (replay-attack window).
+  4. Idempotency-check via the `X-Razorpay-Event-Id` header against the
      webhook_events table. Duplicate delivery → 200 with `outcome="duplicate"`,
      no side effects.
-  3. Reject events older than 10 minutes (replay-attack window).
-  4. Dispatch to billing.apply_razorpay_event(), which is itself idempotent.
+  5. Dispatch to billing.apply_razorpay_event(), which is itself idempotent.
 
 Idempotency: Razorpay retries on 5xx. apply_razorpay_event() is idempotent at
 the business-logic layer; the event_id store guarantees we never even reach
@@ -64,59 +67,78 @@ async def razorpay_webhook(
 
     event_name = event.get("event")
 
-    # 3. Replay-attack window — reject events older than REPLAY_WINDOW_SECONDS.
-    # Razorpay puts `created_at` (epoch seconds) at the top level of every event.
-    created_at_epoch = event.get("created_at")
-    if created_at_epoch:
-        try:
-            event_time = datetime.fromtimestamp(int(created_at_epoch), tz=timezone.utc)
-            if datetime.now(tz=timezone.utc) - event_time > timedelta(seconds=REPLAY_WINDOW_SECONDS):
-                log.warning(
-                    "razorpay_webhook_too_old",
-                    razorpay_event=event_name,
-                    event_age_seconds=(datetime.now(tz=timezone.utc) - event_time).total_seconds(),
-                )
-                # Return 200 — Razorpay shouldn't keep retrying an event we'll never accept
-                return {"received": True, "outcome": "stale_event_rejected"}
-        except (TypeError, ValueError):
-            pass
-
-    # 4. Idempotency — if this event_id was already processed, short-circuit.
-    if x_razorpay_event_id:
-        existing = await db.scalar(
-            select(WebhookEvent).where(
-                WebhookEvent.provider == "razorpay",
-                WebhookEvent.event_id == x_razorpay_event_id,
-            )
+    # 3. Strictness: created_at and X-Razorpay-Event-Id are REQUIRED.
+    # Razorpay always sends both; an event without them cannot be checked for
+    # replay or deduplicated, so processing it would silently bypass those
+    # protections. Fail closed with 400 instead.
+    if not x_razorpay_event_id:
+        raise HTTPException(
+            400,
+            detail={
+                "error": {
+                    "code": "missing_event_id",
+                    "message": "X-Razorpay-Event-Id header is required.",
+                }
+            },
         )
-        if existing is not None:
-            log.info(
-                "razorpay_webhook_duplicate",
-                razorpay_event=event_name,
-                event_id=x_razorpay_event_id,
-                original_outcome=existing.outcome,
-            )
-            return {"received": True, "outcome": "duplicate", "previous_outcome": existing.outcome}
+    created_at_epoch = event.get("created_at")
+    try:
+        event_time = datetime.fromtimestamp(int(created_at_epoch), tz=timezone.utc)
+    except (TypeError, ValueError) as e:
+        raise HTTPException(
+            400,
+            detail={
+                "error": {
+                    "code": "missing_created_at",
+                    "message": "Event is missing a valid created_at timestamp.",
+                }
+            },
+        ) from e
 
-    # 5. Apply the event
+    # 4. Replay-attack window — reject events older than REPLAY_WINDOW_SECONDS.
+    if datetime.now(tz=timezone.utc) - event_time > timedelta(seconds=REPLAY_WINDOW_SECONDS):
+        log.warning(
+            "razorpay_webhook_too_old",
+            razorpay_event=event_name,
+            event_age_seconds=(datetime.now(tz=timezone.utc) - event_time).total_seconds(),
+        )
+        # Return 200 — Razorpay shouldn't keep retrying an event we'll never accept
+        return {"received": True, "outcome": "stale_event_rejected"}
+
+    # 5. Idempotency — if this event_id was already processed, short-circuit.
+    existing = await db.scalar(
+        select(WebhookEvent).where(
+            WebhookEvent.provider == "razorpay",
+            WebhookEvent.event_id == x_razorpay_event_id,
+        )
+    )
+    if existing is not None:
+        log.info(
+            "razorpay_webhook_duplicate",
+            razorpay_event=event_name,
+            event_id=x_razorpay_event_id,
+            original_outcome=existing.outcome,
+        )
+        return {"received": True, "outcome": "duplicate", "previous_outcome": existing.outcome}
+
+    # 6. Apply the event
     outcome = await billing.apply_razorpay_event(db, event)
 
-    # 6. Record event_id (best-effort — if it races with another concurrent
+    # 7. Record event_id (best-effort — if it races with another concurrent
     # delivery we'll hit a UNIQUE violation; that's fine because both ended
     # up applying the same idempotent business logic).
-    if x_razorpay_event_id:
-        try:
-            db.add(
-                WebhookEvent(
-                    provider="razorpay",
-                    event_id=x_razorpay_event_id,
-                    event_name=event_name,
-                    outcome=outcome,
-                )
+    try:
+        db.add(
+            WebhookEvent(
+                provider="razorpay",
+                event_id=x_razorpay_event_id,
+                event_name=event_name,
+                outcome=outcome,
             )
-            await db.flush()
-        except IntegrityError:
-            await db.rollback()
+        )
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
 
     log.info("razorpay_webhook", razorpay_event=event_name, outcome=outcome)
     return {"received": True, "outcome": outcome}

@@ -2,17 +2,26 @@
 Dev-only HTML helper page that opens Razorpay Checkout for an order.
 
 Useful before the React frontend is built. The page reads URL query params
-(order_id, key_id, amount, currency, name, description) and opens Razorpay's
-JS Checkout modal. On success it calls our /v1/payments/verify with the
-returned signature, so the subscription is finalised even before the webhook
-arrives.
+(order_id, key_id, amount, currency, name, description, token) and opens
+Razorpay's JS Checkout modal. On success it calls our /v1/payments/verify with
+the returned signature, so the subscription is finalised even before the
+webhook arrives.
 
-NOT for production. The React frontend will do the same flow with proper UX.
+The `token` param is a short-lived single-purpose token (claim
+purpose='checkout', scoped to this order) minted by the billing service and
+already embedded in the checkout_url it returns. It is NOT the user's access
+token — real access tokens must never appear in URLs (browser history, logs,
+Referer leaks), and this route rejects them.
+
+NOT for production: main.py only registers this router when app_env != "prod".
+The React frontend will do the same flow with proper UX.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import HTMLResponse
+
+from app.core.security import TokenError, decode_checkout_token
 
 router = APIRouter()
 
@@ -61,7 +70,10 @@ _PAGE = """<!doctype html>
     const currency = qs.get('currency') || 'INR';
     const name = qs.get('name') || 'CinePile';
     const description = qs.get('description') || 'Subscription';
-    const access_token = qs.get('token'); // backend access token, passed for the verify call
+    // Single-purpose checkout token (purpose='checkout', 10 min TTL) minted by
+    // the backend and embedded in the checkout_url. Only /v1/payments/verify
+    // accepts it, and only for this order.
+    const checkout_token = qs.get('token');
 
     document.getElementById('summary').innerHTML = `
       <div class="row"><span class="label">Plan</span><span class="value">${description}</span></div>
@@ -90,7 +102,7 @@ _PAGE = """<!doctype html>
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + access_token,
+                'Authorization': 'Bearer ' + checkout_token,
               },
               body: JSON.stringify({
                 razorpay_order_id: response.razorpay_order_id,
@@ -122,5 +134,20 @@ _PAGE = """<!doctype html>
 
 
 @router.get("/test-checkout", response_class=HTMLResponse, include_in_schema=False)
-async def test_checkout_page() -> HTMLResponse:
+async def test_checkout_page(token: str = Query(...)) -> HTMLResponse:
+    # Gate the page server-side: only tokens minted with purpose='checkout'
+    # are accepted. A user access token (or anything else) in the URL → 403,
+    # which enforces the "no real tokens in URLs" contract.
+    try:
+        decode_checkout_token(token)
+    except TokenError as e:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": {
+                    "code": "invalid_checkout_token",
+                    "message": "A valid checkout token is required to open this page.",
+                }
+            },
+        ) from e
     return HTMLResponse(content=_PAGE)
