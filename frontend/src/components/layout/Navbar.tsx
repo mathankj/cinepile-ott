@@ -159,6 +159,9 @@ export default function Navbar() {
                   <Link to="/subscribe" onClick={() => setDrawerOpen(false)}>
                     Subscription
                   </Link>
+                  <Link to="/account" onClick={() => setDrawerOpen(false)}>
+                    Account
+                  </Link>
                   {(user?.role === "admin" || user?.role === "content_manager") && (
                     <Link to="/admin" onClick={() => setDrawerOpen(false)} className="text-[var(--color-brand)]">
                       Admin
@@ -300,6 +303,13 @@ function ProfileMenu({
             className="block px-3 py-2 hover:bg-white/5"
           >
             {t("nav.subscription")}
+          </Link>
+          <Link
+            to="/account"
+            onClick={() => setOpen(false)}
+            className="block px-3 py-2 hover:bg-white/5"
+          >
+            Account
           </Link>
           {(user.role === "admin" || user.role === "content_manager") && (
             <Link

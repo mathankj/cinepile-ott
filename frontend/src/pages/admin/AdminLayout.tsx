@@ -1,9 +1,10 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Film, Users as UsersIcon, ScrollText, LayoutDashboard } from "lucide-react";
+import { Film, Users as UsersIcon, ScrollText, LayoutDashboard, Tags } from "lucide-react";
 
 const NAV = [
   { to: "/admin", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/admin/titles", label: "Titles", icon: Film },
+  { to: "/admin/genres", label: "Genres", icon: Tags },
   { to: "/admin/users", label: "Users", icon: UsersIcon, adminOnly: true },
   { to: "/admin/audit", label: "Audit log", icon: ScrollText, adminOnly: true },
 ];

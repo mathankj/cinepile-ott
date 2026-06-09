@@ -27,6 +27,7 @@ const Login = lazy(() => import("../pages/Login"));
 const Signup = lazy(() => import("../pages/Signup"));
 const Subscribe = lazy(() => import("../pages/Subscribe"));
 const ProfilesPage = lazy(() => import("../pages/Profiles"));
+const Account = lazy(() => import("../pages/Account"));
 
 // Admin pages are also lazy-loaded — they only ever load when an admin actually
 // navigates to /admin, which is rare for regular users. Big win for general traffic.
@@ -34,6 +35,8 @@ const AdminLayout = lazy(() => import("../pages/admin/AdminLayout"));
 const AdminDashboard = lazy(() => import("../pages/admin/Dashboard"));
 const AdminTitlesList = lazy(() => import("../pages/admin/TitlesList"));
 const TitleEditor = lazy(() => import("../pages/admin/TitleEditor"));
+const SeasonsEditor = lazy(() => import("../pages/admin/SeasonsEditor"));
+const AdminGenres = lazy(() => import("../pages/admin/Genres"));
 const AuditLog = lazy(() => import("../pages/admin/AuditLog"));
 const AdminUsers = lazy(() => import("../pages/admin/Users"));
 
@@ -151,6 +154,10 @@ const router = createBrowserRouter([
         element: <ProtectedRoute>{lazyRoute(History)}</ProtectedRoute>,
       },
       {
+        path: "/account",
+        element: <ProtectedRoute>{lazyRoute(Account)}</ProtectedRoute>,
+      },
+      {
         path: "/admin",
         element: (
           <ProtectedRoute roles={["admin", "content_manager"]}>
@@ -162,6 +169,8 @@ const router = createBrowserRouter([
           { path: "titles", element: lazyRoute(AdminTitlesList) },
           { path: "titles/new", element: lazyRoute(TitleEditor) },
           { path: "titles/:id", element: lazyRoute(TitleEditor) },
+          { path: "titles/:id/seasons", element: lazyRoute(SeasonsEditor) },
+          { path: "genres", element: lazyRoute(AdminGenres) },
           {
             path: "users",
             element: <ProtectedRoute roles={["admin"]}>{lazyRoute(AdminUsers)}</ProtectedRoute>,
