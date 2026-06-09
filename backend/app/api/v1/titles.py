@@ -49,7 +49,9 @@ import time
 # are invalidated by admin writes (publish/archive/delete) — see
 # invalidate_titles_cache() at the bottom of this file.
 _TITLES_CACHE: dict[tuple, tuple[dict, float]] = {}
-_TITLES_CACHE_TTL_SECONDS = 60
+# Bumped from 60s → 300s. Catalog list is read constantly while users browse;
+# 5 minutes of staleness is acceptable for a demo and cuts Neon hits by 5x.
+_TITLES_CACHE_TTL_SECONDS = 300
 
 
 def invalidate_titles_cache() -> None:

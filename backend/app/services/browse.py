@@ -41,7 +41,10 @@ from app.services import history as history_svc
 # subsequent visit by anyone (or by the same user+country) is sub-100 ms.
 # This is the same trick Netflix uses (their home is cached server-side too).
 _HOME_CACHE: dict[tuple[int | None, str | None], tuple[list[dict], float]] = {}
-_HOME_CACHE_TTL_SECONDS = 60
+# Bumped from 60s → 300s. On the free Render tier the backend cold-starts often;
+# a longer TTL means a single warm session serves many tab switches without
+# re-hitting Neon. Admin writes invalidate via invalidate_home_cache().
+_HOME_CACHE_TTL_SECONDS = 300
 _HOME_CACHE_LOCK = asyncio.Lock()  # avoid stampede when many requests miss simultaneously
 
 

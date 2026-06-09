@@ -1,0 +1,36 @@
+# Keeps the Render free-tier backend awake.
+#
+# Render's free plan spins a service down after ~15 minutes of inactivity, and
+# the next request pays a 30-60 s cold-start (Python boot + dep install cache
+# warm + Neon Postgres reconnect). For a demo this turns every first click
+# after a quiet stretch into a long "Loading…" wait.
+#
+# This workflow pings /healthz every 10 minutes so the dyno never sleeps.
+# /healthz is intentionally dependency-free (no DB hit), so the ping is cheap
+# both for us and for Render — it just keeps the process from being paused.
+name: keep-warm
+
+on:
+  schedule:
+    # Every 10 minutes. GitHub's smallest cron granularity is 5 minutes; 10
+    # gives us a 5-min safety margin under Render's 15-min idle window.
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend /healthz
+        run: |
+          set -euo pipefail
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" \
+              --max-time 90 \
+              https://cinepile-api.onrender.com/healthz) && true
+            echo "attempt $i: HTTP $code"
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 5
+          done
+          echo "all attempts failed"
+          exit 1

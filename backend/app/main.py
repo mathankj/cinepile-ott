@@ -70,6 +70,18 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Public catalog paths — safe to cache in the browser for a short window.
+    # We deliberately exclude /v1/me/*, /v1/auth/*, /v1/admin/*, /v1/subscriptions/me,
+    # /v1/*/play (per-user playback tickets), and anything that mutates state.
+    # 60s public cache + 5min SWR means navigating Home → Browse → Home is
+    # served from the browser cache, not a fresh Render trip.
+    _PUBLIC_CACHEABLE_PREFIXES = (
+        "/v1/titles",       # list, detail, coming-soon, search, trailer
+        "/v1/home",         # home rows + genres
+        "/v1/plans",        # billing plans
+    )
+    _UNCACHEABLE_SUFFIXES = ("/play",)  # per-user playback ticket
+
     @app.middleware("http")
     async def request_context(request: Request, call_next):
         request_id = request.headers.get("x-request-id") or f"req_{uuid.uuid4().hex[:16]}"
@@ -82,6 +94,20 @@ def create_app() -> FastAPI:
             raise
         duration_ms = int((time.perf_counter() - start) * 1000)
         response.headers["x-request-id"] = request_id
+
+        # Browser cache headers — only for safe GETs to public catalog endpoints.
+        # stale-while-revalidate lets the browser show cached content INSTANTLY
+        # while it refreshes in the background, which kills the "loading…" flash
+        # on back/forward navigation.
+        path = request.url.path
+        if (
+            request.method == "GET"
+            and 200 <= response.status_code < 400
+            and path.startswith(_PUBLIC_CACHEABLE_PREFIXES)
+            and not path.endswith(_UNCACHEABLE_SUFFIXES)
+        ):
+            response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=300"
+
         log.info(
             "request",
             method=request.method,

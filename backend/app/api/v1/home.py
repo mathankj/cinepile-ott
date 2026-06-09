@@ -15,7 +15,8 @@ router = APIRouter()
 # Genres rarely change — cache for 5 minutes. Without this, every /browse
 # render pays a cold Neon round-trip for the genres dropdown.
 _GENRES_CACHE: tuple[list, float] | None = None
-_GENRES_CACHE_TTL_SECONDS = 300
+# Genres change ~never. 30 minutes is plenty.
+_GENRES_CACHE_TTL_SECONDS = 1800
 
 
 def invalidate_genres_cache() -> None:

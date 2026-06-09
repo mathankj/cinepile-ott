@@ -12,7 +12,11 @@ export default function Home() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["home"],
     queryFn: () => home.get("IN"),
-    staleTime: 60_000,
+    // Inherits 5min staleTime / 30min gcTime from QueryClient. placeholderData
+    // keeps the previous payload on re-mount so navigating back never flashes
+    // the skeleton — the user sees the old home instantly while a background
+    // refresh runs (if stale).
+    placeholderData: (prev) => prev,
   });
 
   // Hero selection: prefer the first title across all rows that has a
