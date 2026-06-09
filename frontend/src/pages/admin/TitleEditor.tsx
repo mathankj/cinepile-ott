@@ -26,6 +26,13 @@ export default function TitleEditor() {
     enabled: !!titleId,
   });
 
+  // All genres, for the multi-select chips below. Same list the Genres admin
+  // page manages.
+  const genresQ = useQuery({
+    queryKey: ["admin", "genres"],
+    queryFn: () => admin.listGenres(),
+  });
+
   const [form, setForm] = useState({
     slug: "",
     type: "movie" as "movie" | "series",
@@ -38,6 +45,10 @@ export default function TitleEditor() {
     is_free: false,
     status: "draft" as "draft" | "published",
     hls_manifest_url: "",
+    poster_url: "",
+    backdrop_url: "",
+    trailer_url: "",
+    genre_slugs: [] as string[],
   });
 
   // Hydrate form when detail loads
@@ -54,7 +65,20 @@ export default function TitleEditor() {
       is_free: detail.data.is_free,
       status: detail.data.status === "published" ? "published" : "draft",
       hls_manifest_url: "",
+      poster_url: detail.data.poster_url ?? "",
+      backdrop_url: detail.data.backdrop_url ?? "",
+      trailer_url: detail.data.trailer_url ?? "",
+      genre_slugs: detail.data.genres.map((g) => g.slug),
     });
+  }
+
+  function toggleGenre(slug: string) {
+    setForm((f) => ({
+      ...f,
+      genre_slugs: f.genre_slugs.includes(slug)
+        ? f.genre_slugs.filter((s) => s !== slug)
+        : [...f.genre_slugs, slug],
+    }));
   }
 
   const [err, setErr] = useState<string | null>(null);
@@ -66,6 +90,9 @@ export default function TitleEditor() {
         release_year: form.release_year ? Number(form.release_year) : null,
         runtime_minutes: form.runtime_minutes ? Number(form.runtime_minutes) : null,
         hls_manifest_url: form.hls_manifest_url || null,
+        poster_url: form.poster_url || null,
+        backdrop_url: form.backdrop_url || null,
+        trailer_url: form.trailer_url || null,
       }),
     onSuccess: (t) => {
       qc.invalidateQueries({ queryKey: ["admin", "titles"] });
@@ -85,6 +112,11 @@ export default function TitleEditor() {
         original_language: form.original_language || null,
         is_free: form.is_free,
         hls_manifest_url: form.hls_manifest_url || undefined,
+        poster_url: form.poster_url || null,
+        backdrop_url: form.backdrop_url || null,
+        trailer_url: form.trailer_url || null,
+        // TitleUpdate.genre_slugs replaces the title's full genre set.
+        genre_slugs: form.genre_slugs,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "title", titleId] });
@@ -105,6 +137,18 @@ export default function TitleEditor() {
   const deleteM = useMutation({
     mutationFn: () => admin.deleteTitle(titleId!),
     onSuccess: () => nav("/admin/titles"),
+  });
+
+  // Schedule a draft for auto-publish. datetime-local gives a local wall-clock
+  // string; the backend wants an ISO instant, so convert via Date.
+  const [publishAt, setPublishAt] = useState("");
+  const scheduleM = useMutation({
+    mutationFn: () => admin.scheduleTitle(titleId!, new Date(publishAt).toISOString()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "title", titleId] });
+      setPublishAt("");
+    },
+    onError: (e) => setErr(apiErrorMessage(e)),
   });
 
   return (
@@ -185,6 +229,61 @@ export default function TitleEditor() {
               />
             </div>
           </div>
+          <label className="block text-xs uppercase tracking-wider text-white/60">
+            Poster URL (2:3 portrait)
+          </label>
+          <input
+            className="input-base"
+            placeholder="https://…/poster.jpg"
+            value={form.poster_url}
+            onChange={(e) => setForm({ ...form, poster_url: e.target.value })}
+          />
+          <label className="block text-xs uppercase tracking-wider text-white/60">
+            Backdrop URL (16:9 landscape)
+          </label>
+          <input
+            className="input-base"
+            placeholder="https://…/backdrop.jpg"
+            value={form.backdrop_url}
+            onChange={(e) => setForm({ ...form, backdrop_url: e.target.value })}
+          />
+          <label className="block text-xs uppercase tracking-wider text-white/60">
+            Trailer URL
+          </label>
+          <input
+            className="input-base"
+            placeholder="https://…/trailer.m3u8"
+            value={form.trailer_url}
+            onChange={(e) => setForm({ ...form, trailer_url: e.target.value })}
+          />
+          <label className="block text-xs uppercase tracking-wider text-white/60">Genres</label>
+          {/* Toggle chips — saving sends the selected slugs as genre_slugs,
+              which replaces the title's genre set server-side. */}
+          <div className="flex flex-wrap gap-2">
+            {genresQ.data?.map((g) => {
+              const selected = form.genre_slugs.includes(g.slug);
+              return (
+                <button
+                  type="button"
+                  key={g.id}
+                  onClick={() => toggleGenre(g.slug)}
+                  aria-pressed={selected}
+                  className={`rounded border px-3 py-1 text-sm transition-colors duration-200 ${
+                    selected
+                      ? "border-[var(--color-brand)] bg-[var(--color-brand)]/15 text-white"
+                      : "border-white/20 text-white/70 hover:border-white/50"
+                  }`}
+                >
+                  {g.name}
+                </button>
+              );
+            })}
+            {genresQ.data?.length === 0 && (
+              <span className="text-sm text-white/50">
+                No genres yet — add some on the Genres page.
+              </span>
+            )}
+          </div>
           <label className="mt-2 flex items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -233,6 +332,37 @@ export default function TitleEditor() {
               </>
             )}
           </div>
+
+          {/* Schedule — drafts only: pick a future time and the backend flips
+              the title to published automatically at that instant. */}
+          {!isNew && detail.data?.status === "draft" && (
+            <div className="mt-6 rounded border border-white/10 bg-[var(--color-bg-elevated)] p-4">
+              <h3 className="text-xs uppercase tracking-wider text-white/60">Schedule</h3>
+              <p className="mt-1 text-sm text-white/70">
+                Publish this draft automatically at a future date and time.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <input
+                  type="datetime-local"
+                  className="input-base !w-auto text-sm"
+                  value={publishAt}
+                  onChange={(e) => setPublishAt(e.target.value)}
+                />
+                <button
+                  className="btn-secondary !py-2 !px-4 text-sm"
+                  disabled={!publishAt || scheduleM.isPending}
+                  onClick={() => scheduleM.mutate()}
+                >
+                  {scheduleM.isPending ? "Scheduling…" : "Schedule publish"}
+                </button>
+              </div>
+            </div>
+          )}
+          {!isNew && detail.data?.status === "scheduled" && detail.data.published_at && (
+            <div className="mt-6 rounded border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+              Scheduled to publish on {new Date(detail.data.published_at).toLocaleString()}.
+            </div>
+          )}
         </div>
 
         {/* RIGHT — uploads */}

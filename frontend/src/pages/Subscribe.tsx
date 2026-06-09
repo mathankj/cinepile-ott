@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check } from "lucide-react";
 import { billing } from "../api";
-import { useAuthStore } from "../stores/auth";
 
 /**
  * Subscribe page — list plans, pick one, redirect to Razorpay Checkout.
@@ -17,7 +16,6 @@ import { useAuthStore } from "../stores/auth";
  */
 export default function Subscribe() {
   const qc = useQueryClient();
-  const accessToken = useAuthStore((s) => s.accessToken);
   const [busyCode, setBusyCode] = useState<string | null>(null);
 
   const plansQ = useQuery({ queryKey: ["plans"], queryFn: () => billing.plans() });
@@ -32,9 +30,10 @@ export default function Subscribe() {
     },
     onSuccess: (sub) => {
       if (sub.checkout_url) {
-        // Append our access token so the test-checkout page can call /payments/verify
-        const sep = sub.checkout_url.includes("?") ? "&" : "?";
-        window.location.href = `${sub.checkout_url}${sep}token=${accessToken}`;
+        // Navigate as-is — the backend embeds a scoped short-TTL token in the
+        // URL itself. We must NOT append our long-lived access token here: it
+        // would leak into browser history, referrers, and server logs.
+        window.location.href = sub.checkout_url;
       }
     },
   });
@@ -69,8 +68,7 @@ export default function Subscribe() {
               type="button"
               className="btn-primary mt-4"
               onClick={() => {
-                const sep = subQ.data!.checkout_url!.includes("?") ? "&" : "?";
-                window.location.href = `${subQ.data!.checkout_url}${sep}token=${accessToken}`;
+                window.location.href = subQ.data!.checkout_url!;
               }}
             >
               Complete checkout
