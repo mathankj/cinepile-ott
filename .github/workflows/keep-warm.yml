@@ -12,24 +12,28 @@ name: keep-warm
 
 on:
   schedule:
-    # Every 10 minutes. GitHub's smallest cron granularity is 5 minutes; 10
-    # gives us a 5-min safety margin under Render's 15-min idle window.
-    - cron: "*/10 * * * *"
+    # Every 5 minutes — GitHub Actions' minimum. We hit /readyz (not /healthz)
+    # so the ping touches Postgres too. Neon's free tier suspends compute after
+    # ~5 min idle and reboot costs 3-7 s; without this, every "first click"
+    # after a quiet stretch waits on Neon waking up.
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping backend /healthz
+      - name: Ping backend /readyz (warms Render dyno + Neon compute)
         run: |
           set -euo pipefail
           for i in 1 2 3; do
             code=$(curl -s -o /dev/null -w "%{http_code}" \
               --max-time 90 \
-              https://cinepile-api.onrender.com/healthz) && true
+              https://cinepile-api.onrender.com/readyz) && true
             echo "attempt $i: HTTP $code"
-            if [ "$code" = "200" ]; then exit 0; fi
+            # 200 = healthy. 503 = degraded but server replied (still counts as
+            # a Neon ping, which is what we care about for keep-warm).
+            if [ "$code" = "200" ] || [ "$code" = "503" ]; then exit 0; fi
             sleep 5
           done
           echo "all attempts failed"

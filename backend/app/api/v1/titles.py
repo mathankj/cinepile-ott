@@ -53,12 +53,21 @@ _TITLES_CACHE: dict[tuple, tuple[dict, float]] = {}
 # 5 minutes of staleness is acceptable for a demo and cuts Neon hits by 5x.
 _TITLES_CACHE_TTL_SECONDS = 300
 
+# Per-title detail cache (used by title detail page + season pages). Without
+# this, every click into a movie/series detail page or season hit Neon fresh,
+# costing 3-10 s on cold compute. Keyed by title_id (and season_number for
+# seasons). Invalidated together with the list cache on admin writes.
+_TITLE_DETAIL_CACHE: dict[int, tuple[dict, float]] = {}
+_SEASON_DETAIL_CACHE: dict[tuple[int, int], tuple[dict, float]] = {}
+
 
 def invalidate_titles_cache() -> None:
-    """Drop ALL list responses. Called from admin endpoints that mutate the
-    catalog (publish, archive, delete, create) so admins don't see stale data
-    immediately after a write."""
+    """Drop ALL list + detail responses. Called from admin endpoints that
+    mutate the catalog (publish, archive, delete, create) so admins don't
+    see stale data immediately after a write."""
     _TITLES_CACHE.clear()
+    _TITLE_DETAIL_CACHE.clear()
+    _SEASON_DETAIL_CACHE.clear()
 
 
 @router.get("", response_model=TitleListResponse)
@@ -125,20 +134,33 @@ async def search_titles(db: DbSession, q: str = Query(min_length=1)) -> list[Tit
 
 @router.get("/{title_id}", response_model=TitleDetail)
 async def get_title(title_id: int, db: DbSession) -> TitleDetail:
+    now = time.monotonic()
+    cached = _TITLE_DETAIL_CACHE.get(title_id)
+    if cached and cached[1] > now:
+        return TitleDetail.model_validate(cached[0])
     try:
         t = await catalog.get_title(db, title_id)
     except catalog.TitleNotFound as e:
         raise _err(e, 404) from e
-    return _title_to_detail(t)
+    detail = _title_to_detail(t)
+    _TITLE_DETAIL_CACHE[title_id] = (detail.model_dump(), now + _TITLES_CACHE_TTL_SECONDS)
+    return detail
 
 
 @router.get("/{title_id}/seasons/{season_number}", response_model=SeasonDetail)
 async def get_season(title_id: int, season_number: int, db: DbSession) -> SeasonDetail:
+    key = (title_id, season_number)
+    now = time.monotonic()
+    cached = _SEASON_DETAIL_CACHE.get(key)
+    if cached and cached[1] > now:
+        return SeasonDetail.model_validate(cached[0])
     try:
         s = await catalog.get_season(db, title_id, season_number)
     except (catalog.TitleNotFound, catalog.SeasonNotFound) as e:
         raise _err(e, 404) from e
-    return SeasonDetail.model_validate(s)
+    detail = SeasonDetail.model_validate(s)
+    _SEASON_DETAIL_CACHE[key] = (detail.model_dump(), now + _TITLES_CACHE_TTL_SECONDS)
+    return detail
 
 
 @router.get(
