@@ -10,7 +10,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import EmailStr, Field
+from pydantic import EmailStr, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     # entirely so any logged-in user can play any title. Flip to True post-demo
     # once real billing is wired up.
     billing_gate_enabled: bool = True
+
+    # Rate limiting (login/signup brute-force defence). In-process sliding
+    # window — fine while we run a single worker; becomes Redis-backed when we
+    # scale out. Tests disable it globally (they log in repeatedly from one
+    # client) and re-enable it explicitly in the rate-limit tests.
+    rate_limit_enabled: bool = True
 
     # Razorpay
     razorpay_key_id: str | None = None
@@ -118,6 +124,21 @@ class Settings(BaseSettings):
                 self.storage_bucket,
             ]
         )
+
+    @model_validator(mode="after")
+    def _require_drm_token_secret(self) -> "Settings":
+        """Fail-closed at startup: DRM without its own signing secret is a
+        misconfiguration, not something to paper over with jwt_secret.
+        License-request tokens must be signed with a provider-shared secret —
+        reusing jwt_secret would mean a DRM-provider compromise also forges
+        our session tokens (and vice versa)."""
+        drm_in_use = self.drm_configured() or self.drm_provider != "none"
+        if drm_in_use and not self.drm_token_secret:
+            raise ValueError(
+                "DRM_TOKEN_SECRET must be set when a DRM license URL or "
+                "DRM_PROVIDER is configured. Refusing to fall back to JWT_SECRET."
+            )
+        return self
 
     model_config = SettingsConfigDict(
         env_file=".env",

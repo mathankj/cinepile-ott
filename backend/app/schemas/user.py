@@ -17,6 +17,20 @@ class UserLogin(BaseModel):
     password: str
 
 
+class ChangePasswordRequest(BaseModel):
+    """Body for POST /v1/auth/change-password.
+
+    extra="forbid": unknown fields → 422 instead of being silently dropped,
+    so a client typo (e.g. `new_passwrd`) can't slip through unnoticed.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: str
+    # Same strength rule as signup.
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class UserRead(BaseModel):
     """Output schema for user data — uses `str` for email, not EmailStr.
 

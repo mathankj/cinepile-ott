@@ -93,21 +93,10 @@ async def test_old_event_rejected_as_stale(razorpay_env, client):
 
 
 @pytest.mark.asyncio
-async def test_webhook_without_event_id_still_works(
-    razorpay_env, auth_client, make_plan, client
-):
-    """If the header is missing (shouldn't happen in prod), we still process —
-    we just can't de-dup. Forward-compatible."""
-    from unittest.mock import patch
-
-    cm_client, _, _ = auth_client
-    await make_plan(code="monthly")
-    with patch(
-        "app.services.razorpay_client.create_order",
-        return_value={"id": "order_NOID", "amount": 19900, "currency": "INR"},
-    ):
-        await cm_client.post("/v1/subscriptions", json={"plan_code": "monthly"})
-
+async def test_webhook_without_event_id_is_rejected(razorpay_env, client):
+    """No X-Razorpay-Event-Id → 400. Without it we can't de-dup, and
+    processing anyway would silently bypass the idempotency guarantee.
+    Razorpay always sends the header, so a request without it isn't Razorpay."""
     body, sig = _signed_webhook(
         {
             "event": "payment.captured",
@@ -121,5 +110,28 @@ async def test_webhook_without_event_id_still_works(
         headers={"X-Razorpay-Signature": sig, "Content-Type": "application/json"},
         # No X-Razorpay-Event-Id
     )
-    assert resp.status_code == 200
-    assert resp.json()["outcome"] == "applied_payment.captured"
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["error"]["code"] == "missing_event_id"
+
+
+@pytest.mark.asyncio
+async def test_webhook_without_created_at_is_rejected(razorpay_env, client):
+    """No created_at in the body → 400. Without it the replay window can't be
+    enforced, so we fail closed instead of skipping the check."""
+    body, sig = _signed_webhook(
+        {
+            "event": "payment.captured",
+            "payload": {"payment": {"entity": {"id": "p", "order_id": "order_NOTS"}}},
+        }
+    )
+    resp = await client.post(
+        "/v1/webhooks/razorpay",
+        content=body,
+        headers={
+            "X-Razorpay-Signature": sig,
+            "X-Razorpay-Event-Id": "evt_NO_TS",
+            "Content-Type": "application/json",
+        },
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["error"]["code"] == "missing_created_at"

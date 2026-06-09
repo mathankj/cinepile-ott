@@ -22,16 +22,19 @@ from datetime import datetime, timezone
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.logging import get_logger
 from app.core.security import (
     TokenError,
     create_access_token,
     create_refresh_token,
     decode_token,
     hash_password,
-    verify_password,
+    verify_password_detailed,
 )
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
+
+log = get_logger(__name__)
 
 
 # ---------- Domain errors (route layer maps these to HTTP codes) ----------
@@ -130,10 +133,21 @@ async def signup(db: AsyncSession, *, email: str, password: str, full_name: str 
 async def login(db: AsyncSession, *, email: str, password: str) -> tuple[User, str, str, datetime]:
     email = _normalize_email(email)
     user = await db.scalar(select(User).where(User.email == email))
-    if user is None or not verify_password(password, user.password_hash):
+    if user is None:
+        raise InvalidCredentials
+    valid, needs_rehash = verify_password_detailed(password, user.password_hash)
+    if not valid:
         raise InvalidCredentials
     if not user.is_active:
         raise InactiveUser
+
+    # Transparent hash upgrade: hashes created before the bcrypt null-byte fix
+    # used a weaker pre-hash scheme. Login is the only moment we hold the
+    # plaintext, so we rehash with the current scheme right here.
+    if needs_rehash:
+        user.password_hash = hash_password(password)
+        await db.flush()
+        log.info("password_rehashed", user_id=user.id)
 
     access, refresh, refresh_exp = await _issue_token_pair(db, user)
     return user, access, refresh, refresh_exp
@@ -185,6 +199,43 @@ async def refresh(db: AsyncSession, *, refresh_token: str) -> tuple[User, str, s
     row.replaced_by_id = new_row.id if new_row else None
 
     return user, new_access, new_refresh, new_exp
+
+
+async def change_password(
+    db: AsyncSession, user: User, *, current_password: str, new_password: str
+) -> tuple[str, str, datetime]:
+    """Change the user's password and rotate ALL their sessions.
+
+    Steps (order matters):
+      1. Re-verify the current password — possession of an access token alone
+         (e.g. a stolen token) must not be enough to take over the account.
+      2. Store the new hash.
+      3. Revoke every refresh-token family and bump session_version so every
+         outstanding access token dies too.
+      4. Mint a fresh pair (carrying the NEW session_version) so the session
+         that made this request stays logged in.
+    """
+    valid, _ = verify_password_detailed(current_password, user.password_hash)
+    if not valid:
+        raise InvalidCredentials
+
+    user.password_hash = hash_password(new_password)
+
+    # Kill every other session: all refresh families + all access tokens
+    # (access tokens carry "sv" which deps check against session_version).
+    await db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user.id, RefreshToken.revoked_at.is_(None))
+        .values(revoked_at=datetime.now(tz=timezone.utc))
+    )
+    user.session_version += 1
+    await db.flush()
+
+    access, refresh, refresh_exp = await _issue_token_pair(db, user)
+
+    # Audit trail — user id only, NEVER the passwords themselves.
+    log.info("password_changed", user_id=user.id, sessions_revoked=True)
+    return access, refresh, refresh_exp
 
 
 async def logout_family(db: AsyncSession, *, refresh_token: str) -> None:

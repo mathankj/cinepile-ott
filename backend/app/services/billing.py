@@ -17,9 +17,11 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.core.security import create_checkout_token
 from app.models.subscription import Plan, Subscription
 from app.models.user import User
 
@@ -54,6 +56,37 @@ def _period_end(start: datetime, interval: str) -> datetime:
     if interval == "year":
         return start + timedelta(days=365)
     return start + timedelta(days=30)
+
+
+def _attach_checkout_token(sub: Subscription) -> None:
+    """Make the dev checkout_url COMPLETE by appending a short-lived
+    single-purpose token (claim purpose='checkout', scoped to this order).
+
+    Why: the frontend used to append the user's real access token to the URL,
+    which leaks it via browser history / logs / Referer. The new contract is
+    that whatever URL the billing service returns is ready to open as-is.
+
+    Why set_committed_value: the DB column stays the base URL (tokens expire
+    in 10 min — persisting one is pointless, and the JWT would overflow the
+    varchar(255) column). set_committed_value swaps the in-memory value the
+    response serializer sees WITHOUT marking the row dirty, so the token is
+    never flushed back to the database.
+
+    Only applies to our dev /test-checkout page. Razorpay-hosted short_urls
+    (subscriptions mode) and the prod Checkout-JS flow carry no token.
+    """
+    base_url = sub.checkout_url
+    if not base_url or not base_url.startswith("/test-checkout"):
+        return
+    if sub.provider_subscription_id is None:
+        return
+    token = create_checkout_token(
+        user_id=sub.user_id,
+        subscription_id=sub.id,
+        order_id=sub.provider_subscription_id,
+    )
+    separator = "&" if "?" in base_url else "?"
+    set_committed_value(sub, "checkout_url", f"{base_url}{separator}token={token}")
 
 
 # ---- Read helpers (provider-agnostic) ------------------------------------------
@@ -96,7 +129,13 @@ async def get_my_subscription_any_status(db: AsyncSession, user: User) -> Subscr
         .where(Subscription.user_id == user.id)
         .order_by(Subscription.id.desc())
     )
-    return await db.scalar(stmt)
+    sub = await db.scalar(stmt)
+    if sub is not None and sub.status == "pending":
+        # Re-mint a fresh checkout token on every read — the embedded token
+        # only lives 10 minutes, so a user returning later to "Complete
+        # checkout" always gets a working link.
+        _attach_checkout_token(sub)
+    return sub
 
 
 async def has_active_subscription(db: AsyncSession, user: User) -> bool:
@@ -141,7 +180,9 @@ async def subscribe(db: AsyncSession, user: User, *, plan_code: str) -> Subscrip
 
     existing_pending = await _get_pending_subscription(db, user, plan_id=plan.id)
     if existing_pending is not None:
-        # Idempotent — same plan, same Razorpay order, same checkout URL.
+        # Idempotent — same plan, same Razorpay order; checkout token re-minted
+        # because the previously-issued one may have expired (10 min TTL).
+        _attach_checkout_token(existing_pending)
         return existing_pending
 
     settings = get_settings()
@@ -257,6 +298,9 @@ async def _subscribe_razorpay_orders(db: AsyncSession, user: User, plan: Plan) -
     }
     sub.checkout_url = f"/test-checkout?{urlencode(params)}"
     await db.flush()
+    # Returned URL is complete: a scoped 10-min checkout token rides along
+    # (in memory only — the stored column keeps the tokenless base URL).
+    _attach_checkout_token(sub)
     return sub
 
 

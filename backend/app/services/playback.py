@@ -112,8 +112,14 @@ def _build_drm_config(user_id: int, ref_type: str, ref_id: int) -> dict | None:
     # accept this in the Authorization or X-DRM-Token header and validate
     # signature + claims before issuing keys. drm_token_secret is provider-
     # supplied (NOT our jwt_secret) so a key compromise on one system doesn't
-    # cascade to the other.
-    secret = settings.drm_token_secret or settings.jwt_secret
+    # cascade to the other. Config validation enforces this at startup; the
+    # check here fails closed in case settings were mutated after boot.
+    secret = settings.drm_token_secret
+    if not secret:
+        raise RuntimeError(
+            "DRM is configured but DRM_TOKEN_SECRET is not set. Refusing to "
+            "sign license tokens with JWT_SECRET — set DRM_TOKEN_SECRET."
+        )
     drm_token_exp = datetime.now(tz=timezone.utc) + timedelta(seconds=settings.drm_token_ttl_seconds)
     drm_token = jwt.encode(
         {

@@ -25,6 +25,10 @@ os.environ["BILLING_MODE"] = "orders"  # default; razorpay tests opt into other 
 # The demo .env disables the subscription gate; tests assert real gating
 # behaviour, so force it back on here. Demo-mode tests monkeypatch settings.
 os.environ["BILLING_GATE_ENABLED"] = "true"
+# Rate limiting off by default in tests — the auth fixtures log in repeatedly
+# from one client IP and would trip the login limiter. The rate-limit tests
+# re-enable it explicitly (monkeypatch + get_settings.cache_clear()).
+os.environ["RATE_LIMIT_ENABLED"] = "false"
 os.environ.pop("RAZORPAY_KEY_ID", None)
 os.environ.pop("RAZORPAY_KEY_SECRET", None)
 
