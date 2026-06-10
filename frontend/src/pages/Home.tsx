@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
+import { useTranslation } from "react-i18next";
 import { home } from "../api";
 import { Billboard } from "../components/title/Billboard";
 import { TitleRow } from "../components/title/TitleRow";
@@ -9,6 +10,7 @@ import { TitleRow } from "../components/title/TitleRow";
  * Empty rows are filtered out by the backend.
  */
 export default function Home() {
+  const { t } = useTranslation();
   const { data, isLoading, error } = useQuery({
     queryKey: ["home"],
     queryFn: () => home.get("IN"),
@@ -39,7 +41,7 @@ export default function Home() {
   if (error || !data) {
     return (
       <div className="flex h-[80vh] items-center justify-center px-4">
-        <p className="text-white/60">Couldn't load home page. Refresh to retry.</p>
+        <p className="text-white/60">{t("home.load_error")}</p>
       </div>
     );
   }

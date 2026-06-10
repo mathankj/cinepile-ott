@@ -1,4 +1,15 @@
 {
+  "common": {
+    "loading": "Loading…",
+    "back": "Back",
+    "cancel": "Cancel",
+    "movie": "Movie",
+    "series": "Series",
+    "minutes": "{{minutes}} min",
+    "minutes_short": "{{minutes}}m",
+    "scroll_left": "Scroll left",
+    "scroll_right": "Scroll right"
+  },
   "nav": {
     "home": "Home",
     "tv_shows": "TV Shows",
@@ -9,12 +20,16 @@
     "notifications": "Notifications",
     "sign_in": "Sign In",
     "open_menu": "Open menu",
+    "close_menu": "Close menu",
     "account_menu": "Account menu",
     "switch_profile": "Switch profile",
     "viewing_history": "Viewing History",
     "subscription": "Subscription",
+    "account": "Account",
     "admin": "Admin",
-    "sign_out": "Sign out"
+    "sign_out": "Sign out",
+    "language": "Language",
+    "brand_home": "CinePile home"
   },
   "auth": {
     "sign_in_title": "Sign In",
@@ -29,6 +44,7 @@
     "sign_up_cta": "Sign Up",
     "remember_me": "Remember me",
     "need_help": "Need help?",
+    "help_coming_soon": "Coming soon — contact support meanwhile",
     "new_to_brand": "New to CinePile?",
     "already_member": "Already on CinePile?",
     "sign_up_now": "Sign up now",
@@ -55,11 +71,16 @@
     "title": "Search",
     "placeholder": "Titles, genres, languages…",
     "min_chars": "Type at least 2 characters.",
+    "searching": "Searching…",
     "no_matches": "No matches for \"{{query}}\"."
   },
   "browse": {
     "title": "Browse",
     "all_genres": "All genres",
+    "all_types": "All types",
+    "filter_type": "Title type",
+    "filter_genre": "Genre",
+    "filter_sort": "Sort",
     "sort_newest": "Newest first",
     "sort_oldest": "Oldest first",
     "sort_az": "A → Z",
@@ -72,8 +93,54 @@
   },
   "title_detail": {
     "play": "Play",
+    "play_s1e1": "Play S1E1",
     "add_to_list": "Add to My List",
-    "watch_trailer": "Watch Trailer"
+    "remove_from_list": "Remove from My List",
+    "watch_trailer": "Watch Trailer",
+    "not_found": "Title not found.",
+    "seasons_count": "Seasons: {{n}}",
+    "audio": "Audio",
+    "subtitles": "Subtitles",
+    "seasons": "Seasons",
+    "season_number": "Season {{number}}",
+    "episode_count": "Episodes: {{n}}",
+    "more_like_this": "More like this",
+    "rate_not_for_me": "Not for me",
+    "rate_like": "I like this",
+    "rate_love": "Love this"
+  },
+  "season": {
+    "showing_episodes": "Showing {{shown}} of {{total}} episodes",
+    "ep_number": "Ep {{number}}",
+    "coming_soon": "Coming soon",
+    "show_more": "Show more episodes ({{remaining}} left)"
+  },
+  "watch": {
+    "trailer_error": "Couldn't load the trailer.",
+    "playback_error": "Couldn't start playback.",
+    "view_plans": "View Plans",
+    "go_back": "Go back",
+    "next_episode_in": "Next episode in {{seconds}}…",
+    "play_now": "Play now",
+    "protected_title": "Protected content",
+    "protected_body": "Playback paused while this window is not visible.",
+    "resume": "Resume"
+  },
+  "my_list": {
+    "empty_title": "Your list is empty",
+    "empty_hint_prefix": "Hover any title and click the",
+    "empty_hint_suffix": "button to save it here. Pick up where you left off across all your devices.",
+    "browse_catalog": "Browse the catalog"
+  },
+  "history": {
+    "title": "Viewing Activity",
+    "subtitle": "Everything you've ever watched, finished, or paused. Removing a title here erases all your progress for it.",
+    "empty": "No viewing activity yet.",
+    "finished": "Finished",
+    "hidden": "Hidden from Continue Watching",
+    "percent_watched": "{{percent}}% watched",
+    "remove": "Remove",
+    "page": "Page {{page}}"
   },
   "subscribe": {
     "title": "Choose your plan",
@@ -92,6 +159,38 @@
     "feature_quality": "HD + 4K where available",
     "feature_devices": "Watch on web, mobile, TV",
     "feature_cancel": "Cancel anytime"
+  },
+  "account": {
+    "title": "Account",
+    "your_details": "Your details",
+    "name": "Name",
+    "role": "Role",
+    "member_since": "Member since",
+    "change_password": "Change password",
+    "change_password_hint": "Changing your password signs you out everywhere else.",
+    "current_password": "Current password",
+    "new_password": "New password",
+    "confirm_password": "Confirm new password",
+    "password_too_short": "New password must be at least 8 characters.",
+    "password_mismatch": "New passwords don't match.",
+    "password_changed": "Password changed. All your other sessions have been signed out.",
+    "changing": "Changing…"
+  },
+  "footer": {
+    "questions": "Questions? Contact us.",
+    "faq": "FAQ",
+    "investor_relations": "Investor Relations",
+    "privacy": "Privacy",
+    "help_centre": "Help Centre",
+    "jobs": "Jobs",
+    "cookie_preferences": "Cookie Preferences",
+    "account": "Account",
+    "ways_to_watch": "Ways to Watch",
+    "corporate_information": "Corporate Information",
+    "media_centre": "Media Centre",
+    "terms_of_use": "Terms of Use",
+    "contact_us": "Contact Us",
+    "copyright": "© 2026 CinePile"
   },
   "profiles": {
     "title_who": "Who's watching?",

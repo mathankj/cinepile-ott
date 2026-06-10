@@ -1,11 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { Play, Plus, Check, ThumbsUp, ThumbsDown, Heart } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { catalog, me } from "../api";
 import { TitleRow } from "../components/title/TitleRow";
 import { useAuthStore } from "../stores/auth";
 
 export default function TitleDetail() {
+  const { t } = useTranslation();
   const { id } = useParams();
   const titleId = Number(id);
   const qc = useQueryClient();
@@ -59,7 +61,7 @@ export default function TitleDetail() {
   });
 
   if (isLoading) return <TitleDetailSkeleton />;
-  if (!title) return <div className="p-8 text-white/60">Title not found.</div>;
+  if (!title) return <div className="p-8 text-white/60">{t("title_detail.not_found")}</div>;
 
   return (
     <div>
@@ -86,11 +88,11 @@ export default function TitleDetail() {
             <span className="rounded border border-white/40 px-2 py-0.5">{title.age_rating}</span>
           )}
           {title.release_year && <span>{title.release_year}</span>}
-          {title.runtime_minutes && <span>{title.runtime_minutes} min</span>}
-          {title.type === "series" && <span>{title.seasons.length} Season{title.seasons.length === 1 ? "" : "s"}</span>}
+          {title.runtime_minutes && <span>{t("common.minutes", { minutes: title.runtime_minutes })}</span>}
+          {title.type === "series" && <span>{t("title_detail.seasons_count", { n: title.seasons.length })}</span>}
           {title.is_free && (
             <span className="rounded bg-[var(--color-brand)] px-2 py-0.5 text-xs font-bold tracking-wider text-white">
-              FREE
+              {t("billboard.free")}
             </span>
           )}
         </div>
@@ -104,14 +106,14 @@ export default function TitleDetail() {
               to={`/watch/title/${title.id}`}
               className="inline-flex items-center gap-2 rounded bg-white px-7 py-3 font-semibold text-black hover:bg-white/85"
             >
-              <Play size={18} className="fill-current" /> Play
+              <Play size={18} className="fill-current" /> {t("title_detail.play")}
             </Link>
           ) : (
             <Link
               to={`/title/${title.id}/season/1`}
               className="inline-flex items-center gap-2 rounded bg-white px-7 py-3 font-semibold text-black hover:bg-white/85"
             >
-              <Play size={18} className="fill-current" /> Play S1E1
+              <Play size={18} className="fill-current" /> {t("title_detail.play_s1e1")}
             </Link>
           )}
           {title.trailer_url && (
@@ -119,7 +121,7 @@ export default function TitleDetail() {
               to={`/watch/trailer/${title.id}`}
               className="inline-flex items-center gap-2 rounded bg-white/15 px-7 py-3 font-semibold text-white hover:bg-white/25"
             >
-              Watch Trailer
+              {t("title_detail.watch_trailer")}
             </Link>
           )}
           {isLoggedIn && (
@@ -128,8 +130,8 @@ export default function TitleDetail() {
                 type="button"
                 className="grid h-12 w-12 place-items-center rounded-full border border-white/40 text-white hover:border-white"
                 onClick={() => (inList ? rmM.mutate() : addM.mutate())}
-                aria-label={inList ? "Remove from My List" : "Add to My List"}
-                title={inList ? "Remove from My List" : "Add to My List"}
+                aria-label={inList ? t("title_detail.remove_from_list") : t("title_detail.add_to_list")}
+                title={inList ? t("title_detail.remove_from_list") : t("title_detail.add_to_list")}
               >
                 {inList ? <Check size={20} /> : <Plus size={20} />}
               </button>
@@ -158,7 +160,7 @@ export default function TitleDetail() {
           <div className="mt-8 grid grid-cols-1 gap-3 md:grid-cols-2">
             {title.audio_tracks.length > 0 && (
               <div>
-                <div className="text-xs uppercase tracking-wider text-white/50">Audio</div>
+                <div className="text-xs uppercase tracking-wider text-white/50">{t("title_detail.audio")}</div>
                 <div className="text-sm text-white/80">
                   {title.audio_tracks.map((t) => `${t.language.toUpperCase()} (${t.kind})`).join(" · ")}
                 </div>
@@ -166,7 +168,7 @@ export default function TitleDetail() {
             )}
             {title.subtitle_tracks.length > 0 && (
               <div>
-                <div className="text-xs uppercase tracking-wider text-white/50">Subtitles</div>
+                <div className="text-xs uppercase tracking-wider text-white/50">{t("title_detail.subtitles")}</div>
                 <div className="text-sm text-white/80">
                   {title.subtitle_tracks.map((t) => `${t.language.toUpperCase()} (${t.kind})`).join(" · ")}
                 </div>
@@ -178,7 +180,7 @@ export default function TitleDetail() {
         {/* Series — season list */}
         {title.type === "series" && title.seasons.length > 0 && (
           <section className="mt-10">
-            <h2 className="text-[1.4rem] font-semibold mb-3">Seasons</h2>
+            <h2 className="text-[1.4rem] font-semibold mb-3">{t("title_detail.seasons")}</h2>
             <ul className="space-y-2">
               {title.seasons.map((s) => (
                 <li key={s.id}>
@@ -187,10 +189,10 @@ export default function TitleDetail() {
                     className="flex items-center justify-between rounded border border-white/10 bg-[var(--color-bg-elevated)] px-4 py-3 hover:border-white/30"
                   >
                     <span className="font-medium">
-                      {s.name || `Season ${s.season_number}`}
+                      {s.name || t("title_detail.season_number", { number: s.season_number })}
                     </span>
                     <span className="text-sm text-white/60">
-                      {s.episode_count} episode{s.episode_count === 1 ? "" : "s"}
+                      {t("title_detail.episode_count", { n: s.episode_count })}
                     </span>
                   </Link>
                 </li>
@@ -205,7 +207,7 @@ export default function TitleDetail() {
           similarQ.data undefined, so the section simply doesn't appear. */}
       {similarQ.data && similarQ.data.length > 0 && (
         <div className="pb-8">
-          <TitleRow title="More like this" items={similarQ.data} />
+          <TitleRow title={t("title_detail.more_like_this")} items={similarQ.data} />
         </div>
       )}
     </div>
@@ -257,6 +259,7 @@ function ReactionButtons({
   onSet: (k: "thumbs_down" | "thumbs_up" | "double_thumbs_up") => void;
   onClear: () => void;
 }) {
+  const { t } = useTranslation();
   function toggle(k: "thumbs_down" | "thumbs_up" | "double_thumbs_up") {
     if (current === k) onClear();
     else onSet(k);
@@ -269,7 +272,7 @@ function ReactionButtons({
         type="button"
         className={btn + (current === "thumbs_down" ? " bg-white/20" : "")}
         onClick={() => toggle("thumbs_down")}
-        aria-label="Not for me"
+        aria-label={t("title_detail.rate_not_for_me")}
       >
         <ThumbsDown size={20} />
       </button>
@@ -277,7 +280,7 @@ function ReactionButtons({
         type="button"
         className={btn + (current === "thumbs_up" ? " bg-white/20" : "")}
         onClick={() => toggle("thumbs_up")}
-        aria-label="I like this"
+        aria-label={t("title_detail.rate_like")}
       >
         <ThumbsUp size={20} />
       </button>
@@ -285,7 +288,7 @@ function ReactionButtons({
         type="button"
         className={btn + (current === "double_thumbs_up" ? " bg-[var(--color-brand)] border-[var(--color-brand)]" : "")}
         onClick={() => toggle("double_thumbs_up")}
-        aria-label="Love this"
+        aria-label={t("title_detail.rate_love")}
       >
         <Heart size={20} />
       </button>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { TitleCard } from "./TitleCard";
 import type { TitleSummary } from "../../api/types";
 
@@ -22,6 +23,7 @@ export function TitleRow({
   items: TitleSummary[];
   progressByTitleId?: Record<number, number>;
 }) {
+  const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState(false);
   // Edge state — drives the disabled/visible state on the chevron buttons.
@@ -98,7 +100,7 @@ export function TitleRow({
           type="button"
           className="absolute left-0 top-1/2 -translate-y-1/2 hidden h-[calc(100%-2.5rem)] w-[60px] items-center justify-center bg-black/40 backdrop-blur-sm text-white opacity-0 transition-opacity duration-200 hover:bg-black/60 group-hover/row:opacity-100 md:flex"
           onClick={() => scrollBy("left")}
-          aria-label="Scroll left"
+          aria-label={t("common.scroll_left")}
         >
           <ChevronLeft size={32} />
         </button>
@@ -108,7 +110,7 @@ export function TitleRow({
           type="button"
           className="absolute right-0 top-1/2 -translate-y-1/2 hidden h-[calc(100%-2.5rem)] w-[60px] items-center justify-center bg-black/40 backdrop-blur-sm text-white opacity-0 transition-opacity duration-200 hover:bg-black/60 group-hover/row:opacity-100 md:flex"
           onClick={() => scrollBy("right")}
-          aria-label="Scroll right"
+          aria-label={t("common.scroll_right")}
         >
           <ChevronRight size={32} />
         </button>

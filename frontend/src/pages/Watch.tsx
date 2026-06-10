@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { catalog, playback, progress } from "../api";
 import type { SeasonDetail } from "../api/types";
 import VideoPlayer from "../components/player/VideoPlayer";
@@ -22,6 +23,7 @@ import VideoPlayer from "../components/player/VideoPlayer";
  * docs/decisions/ for the DRM ADR placeholder before production launch.
  */
 export default function Watch() {
+  const { t } = useTranslation();
   const { kind, id } = useParams();
   const nav = useNavigate();
   const qc = useQueryClient();
@@ -127,7 +129,7 @@ export default function Watch() {
       <div className="grid h-screen place-items-center bg-black">
         <div
           className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-[var(--color-brand)]"
-          aria-label="Loading"
+          aria-label={t("common.loading")}
         />
       </div>
     );
@@ -138,7 +140,7 @@ export default function Watch() {
     const msg =
       (error as { response?: { status?: number; data?: { detail?: { error?: { code?: string; message?: string } } } } } | undefined)
         ?.response?.data?.detail?.error?.message ??
-      (isTrailer ? "Couldn't load the trailer." : "Couldn't start playback.");
+      (isTrailer ? t("watch.trailer_error") : t("watch.playback_error"));
     const code = (error as { response?: { status?: number } } | undefined)?.response?.status;
     return (
       <div className="grid h-screen place-items-center bg-black px-4 text-center">
@@ -150,7 +152,7 @@ export default function Watch() {
               className="btn-primary mt-6"
               onClick={() => nav("/subscribe")}
             >
-              View Plans
+              {t("watch.view_plans")}
             </button>
           )}
           <button
@@ -158,7 +160,7 @@ export default function Watch() {
             className="mt-4 block w-full text-sm text-white/60 hover:text-white"
             onClick={() => (isTrailer ? nav(`/title/${refId}`) : nav(-1))}
           >
-            Go back
+            {t("watch.go_back")}
           </button>
         </div>
       </div>
@@ -172,7 +174,7 @@ export default function Watch() {
         onClick={() => (isTrailer ? nav(`/title/${refId}`) : nav(-1))}
         className="absolute left-4 top-4 z-50 flex items-center gap-2 rounded bg-black/60 px-3 py-2 text-sm text-white backdrop-blur-sm hover:bg-black/80"
       >
-        <ArrowLeft size={18} /> Back
+        <ArrowLeft size={18} /> {t("common.back")}
       </button>
       <VideoPlayer
         src={src}
@@ -210,6 +212,7 @@ function NextEpisodeOverlay({
   onPlay: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation();
   const [secondsLeft, setSecondsLeft] = useState(10);
 
   useEffect(() => {
@@ -225,14 +228,14 @@ function NextEpisodeOverlay({
     <div className="absolute inset-0 z-40 grid place-items-center bg-black/80 animate-fade-in">
       <div className="text-center">
         <div className="text-xl font-semibold text-white">
-          Next episode in {secondsLeft}…
+          {t("watch.next_episode_in", { seconds: secondsLeft })}
         </div>
         <div className="mt-6 flex items-center justify-center gap-3">
           <button type="button" className="btn-primary" onClick={onPlay}>
-            Play now
+            {t("watch.play_now")}
           </button>
           <button type="button" className="btn-ghost" onClick={onCancel}>
-            Cancel
+            {t("common.cancel")}
           </button>
         </div>
       </div>
@@ -246,6 +249,7 @@ function NextEpisodeOverlay({
  * not the embed. The player itself stays reusable for trailers / previews.
  */
 function WatchSurface({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
   const surfaceRef = useRef<HTMLDivElement>(null);
   const [curtain, setCurtain] = useState(false);
 
@@ -291,12 +295,12 @@ function WatchSurface({ children }: { children: React.ReactNode }) {
       {curtain && (
         <div className="fixed inset-0 z-[100] grid place-items-center bg-black text-white animate-fade-in">
           <div className="text-center">
-            <div className="text-lg font-semibold">Protected content</div>
+            <div className="text-lg font-semibold">{t("watch.protected_title")}</div>
             <div className="mt-2 text-sm text-white/60">
-              Playback paused while this window is not visible.
+              {t("watch.protected_body")}
             </div>
             <button type="button" className="btn-primary mt-6" onClick={resume}>
-              Resume
+              {t("watch.resume")}
             </button>
           </div>
         </div>

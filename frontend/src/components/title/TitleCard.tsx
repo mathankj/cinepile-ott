@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Play, Plus, Info, Check } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { catalog, me } from "../../api";
 import type { TitleSummary } from "../../api/types";
 import { useAuthStore } from "../../stores/auth";
@@ -34,6 +35,7 @@ export function TitleCard({
   title: TitleSummary;
   progressPercent?: number;
 }) {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const nav = useNavigate();
   const isLoggedIn = useAuthStore((s) => !!s.accessToken);
@@ -132,7 +134,7 @@ export function TitleCard({
               {title.title}
             </div>
             <div className="mt-0.5 text-[11px] text-white/70">
-              {title.type === "series" ? "Series" : "Movie"}
+              {title.type === "series" ? t("common.series") : t("common.movie")}
               {title.release_year ? ` · ${title.release_year}` : ""}
               {title.age_rating ? ` · ${title.age_rating}` : ""}
             </div>
@@ -151,7 +153,7 @@ export function TitleCard({
           <div className="flex justify-end">
             {title.is_free && (
               <span className="rounded bg-[var(--color-brand)] px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-white">
-                FREE
+                {t("billboard.free")}
               </span>
             )}
           </div>
@@ -162,21 +164,23 @@ export function TitleCard({
                 <span className="rounded border border-white/40 px-1 py-0.5">{title.age_rating}</span>
               )}
               {title.release_year && <span>{title.release_year}</span>}
-              {title.runtime_minutes && <span>{title.runtime_minutes}m</span>}
-              <span className="uppercase tracking-wider">{title.type}</span>
+              {title.runtime_minutes && <span>{t("common.minutes_short", { minutes: title.runtime_minutes })}</span>}
+              <span className="uppercase tracking-wider">
+                {title.type === "series" ? t("common.series") : t("common.movie")}
+              </span>
             </div>
             <div className="mt-2 flex items-center gap-1.5">
-              <CardActionButton ariaLabel="Play" filled onClick={onPlayClick}>
+              <CardActionButton ariaLabel={t("billboard.play")} filled onClick={onPlayClick}>
                 <Play size={14} className="fill-current" />
               </CardActionButton>
               <CardActionButton
-                ariaLabel={onList ? "Remove from my list" : "Add to my list"}
+                ariaLabel={onList ? t("title_detail.remove_from_list") : t("title_detail.add_to_list")}
                 onClick={onListClick}
                 pending={addToList.isPending || removeFromList.isPending}
               >
                 {onList ? <Check size={14} /> : <Plus size={14} />}
               </CardActionButton>
-              <CardActionButton ariaLabel="More info" onClick={onInfoClick}>
+              <CardActionButton ariaLabel={t("billboard.more_info")} onClick={onInfoClick}>
                 <Info size={14} />
               </CardActionButton>
             </div>
@@ -190,7 +194,7 @@ export function TitleCard({
             mirrored badge inside the reveal overlay can take over. */}
         {title.is_free && (
           <div className="absolute right-2 top-2 z-20 rounded-sm bg-[var(--color-brand)] px-2 py-0.5 text-[10px] font-bold tracking-wider text-white shadow-md ring-1 ring-black/30 transition-opacity duration-200 group-hover/card:opacity-0">
-            FREE
+            {t("billboard.free")}
           </div>
         )}
 

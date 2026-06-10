@@ -1,17 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Bookmark } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { me } from "../api";
 import { TitleCard } from "../components/title/TitleCard";
 
 export default function MyList() {
+  const { t } = useTranslation();
   const { data, isLoading } = useQuery({
     queryKey: ["watchlist"],
     queryFn: () => me.listWatchlist(),
   });
   return (
     <div className="px-4 md:px-8 lg:px-[60px] py-12">
-      <h1 className="mb-8 text-[2rem] font-bold">My List</h1>
+      <h1 className="mb-8 text-[2rem] font-bold">{t("nav.my_list")}</h1>
 
       {/* Shimmer skeleton while loading so the page doesn't look broken on
           a cold-Neon round trip (can take 5+ seconds on the first request). */}
@@ -26,13 +28,12 @@ export default function MyList() {
       {!isLoading && data?.items.length === 0 && (
         <div className="rounded border border-white/10 bg-[var(--color-bg-elevated)] p-10 text-center">
           <Bookmark size={40} className="mx-auto mb-4 text-white/40" />
-          <h2 className="text-lg font-semibold text-white">Your list is empty</h2>
+          <h2 className="text-lg font-semibold text-white">{t("my_list.empty_title")}</h2>
           <p className="mx-auto mt-2 max-w-md text-sm text-white/60">
-            Hover any title and click the <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-white/60 align-text-bottom">+</span> button to save it
-            here. Pick up where you left off across all your devices.
+            {t("my_list.empty_hint_prefix")} <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-white/60 align-text-bottom">+</span> {t("my_list.empty_hint_suffix")}
           </p>
           <Link to="/browse" className="btn-primary mt-6 inline-flex">
-            Browse the catalog
+            {t("my_list.browse_catalog")}
           </Link>
         </div>
       )}

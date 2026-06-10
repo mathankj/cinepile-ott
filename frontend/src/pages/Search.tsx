@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { catalog } from "../api";
 import { TitleCard } from "../components/title/TitleCard";
 import { Search as SearchIcon } from "lucide-react";
 
 export default function Search() {
+  const { t } = useTranslation();
   const [params, setParams] = useSearchParams();
   // Seed from URL — if the user lands here from a back-nav (or bookmark),
   // the input pre-populates with whatever was in ?q=. Also fires the
@@ -49,13 +51,13 @@ export default function Search() {
 
   return (
     <div className="px-4 md:px-8 lg:px-[60px] py-12">
-      <h1 className="mb-6 text-[2rem] font-bold">Search</h1>
+      <h1 className="mb-6 text-[2rem] font-bold">{t("search.title")}</h1>
       <div className="relative max-w-xl">
         <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-white/50" size={20} />
         <input
           type="search"
           autoFocus
-          placeholder="Titles, genres, languages…"
+          placeholder={t("search.placeholder")}
           value={q}
           onChange={(e) => setQ(e.target.value)}
           className="input-base !pl-10"
@@ -64,13 +66,13 @@ export default function Search() {
 
       <div className="mt-8">
         {debounced.length < 2 && (
-          <p className="text-white/50">Type at least 2 characters.</p>
+          <p className="text-white/50">{t("search.min_chars")}</p>
         )}
         {debounced.length >= 2 && isFetching && !data && (
-          <p className="text-white/50">Searching…</p>
+          <p className="text-white/50">{t("search.searching")}</p>
         )}
         {debounced.length >= 2 && data && data.length === 0 && !isFetching && (
-          <p className="text-white/50">No matches for "{debounced}".</p>
+          <p className="text-white/50">{t("search.no_matches", { query: debounced })}</p>
         )}
         {debounced.length >= 2 && data && data.length > 0 && (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">

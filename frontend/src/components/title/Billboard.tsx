@@ -97,9 +97,9 @@ export function Billboard({ title }: { title: TitleSummary | null }) {
             </span>
           )}
           {title.release_year && <span>{title.release_year}</span>}
-          {title.runtime_minutes && <span>{title.runtime_minutes} min</span>}
+          {title.runtime_minutes && <span>{t("common.minutes", { minutes: title.runtime_minutes })}</span>}
           <span className="rounded bg-white/10 px-2 py-0.5 text-xs uppercase tracking-wider">
-            {title.type}
+            {title.type === "series" ? t("common.series") : t("common.movie")}
           </span>
           {title.is_free && (
             <span className="rounded bg-[var(--color-brand)] px-2 py-0.5 text-xs font-bold tracking-wider text-white">

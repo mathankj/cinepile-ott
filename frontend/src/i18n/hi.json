@@ -1,4 +1,15 @@
 {
+  "common": {
+    "loading": "लोड हो रहा है…",
+    "back": "वापस",
+    "cancel": "रद्द करें",
+    "movie": "फ़िल्म",
+    "series": "सीरीज़",
+    "minutes": "{{minutes}} मिनट",
+    "minutes_short": "{{minutes}} मि",
+    "scroll_left": "बाएँ स्क्रॉल करें",
+    "scroll_right": "दाएँ स्क्रॉल करें"
+  },
   "nav": {
     "home": "होम",
     "tv_shows": "टीवी शोज़",
@@ -9,12 +20,16 @@
     "notifications": "सूचनाएँ",
     "sign_in": "साइन इन",
     "open_menu": "मेन्यू खोलें",
+    "close_menu": "मेन्यू बंद करें",
     "account_menu": "खाता मेन्यू",
     "switch_profile": "प्रोफ़ाइल बदलें",
     "viewing_history": "देखने का इतिहास",
     "subscription": "सब्सक्रिप्शन",
+    "account": "खाता",
     "admin": "एडमिन",
-    "sign_out": "साइन आउट"
+    "sign_out": "साइन आउट",
+    "language": "भाषा",
+    "brand_home": "CinePile होम"
   },
   "auth": {
     "sign_in_title": "साइन इन करें",
@@ -29,6 +44,7 @@
     "sign_up_cta": "साइन अप",
     "remember_me": "मुझे याद रखें",
     "need_help": "मदद चाहिए?",
+    "help_coming_soon": "जल्द आ रहा है — तब तक सपोर्ट से संपर्क करें",
     "new_to_brand": "CinePile पर नए हैं?",
     "already_member": "पहले से सदस्य हैं?",
     "sign_up_now": "अभी साइन अप करें",
@@ -55,11 +71,16 @@
     "title": "खोजें",
     "placeholder": "शीर्षक, शैलियाँ, भाषाएँ…",
     "min_chars": "कम से कम 2 अक्षर टाइप करें।",
+    "searching": "खोजा जा रहा है…",
     "no_matches": "\"{{query}}\" के लिए कोई मेल नहीं मिला।"
   },
   "browse": {
     "title": "ब्राउज़ करें",
     "all_genres": "सभी शैलियाँ",
+    "all_types": "सभी प्रकार",
+    "filter_type": "शीर्षक प्रकार",
+    "filter_genre": "शैली",
+    "filter_sort": "क्रमबद्ध करें",
     "sort_newest": "सबसे नए पहले",
     "sort_oldest": "सबसे पुराने पहले",
     "sort_az": "A → Z",
@@ -72,8 +93,54 @@
   },
   "title_detail": {
     "play": "चलाएँ",
+    "play_s1e1": "S1E1 चलाएँ",
     "add_to_list": "मेरी सूची में जोड़ें",
-    "watch_trailer": "ट्रेलर देखें"
+    "remove_from_list": "मेरी सूची से हटाएँ",
+    "watch_trailer": "ट्रेलर देखें",
+    "not_found": "शीर्षक नहीं मिला।",
+    "seasons_count": "सीज़न: {{n}}",
+    "audio": "ऑडियो",
+    "subtitles": "सबटाइटल",
+    "seasons": "सीज़न",
+    "season_number": "सीज़न {{number}}",
+    "episode_count": "एपिसोड: {{n}}",
+    "more_like_this": "इस जैसे और",
+    "rate_not_for_me": "मेरे लिए नहीं",
+    "rate_like": "मुझे यह पसंद है",
+    "rate_love": "बहुत पसंद है"
+  },
+  "season": {
+    "showing_episodes": "{{total}} में से {{shown}} एपिसोड दिखाए जा रहे हैं",
+    "ep_number": "एपिसोड {{number}}",
+    "coming_soon": "जल्द आ रहा है",
+    "show_more": "और एपिसोड दिखाएँ ({{remaining}} बाक़ी)"
+  },
+  "watch": {
+    "trailer_error": "ट्रेलर लोड नहीं हो सका।",
+    "playback_error": "प्लेबैक शुरू नहीं हो सका।",
+    "view_plans": "योजनाएँ देखें",
+    "go_back": "वापस जाएँ",
+    "next_episode_in": "अगला एपिसोड {{seconds}} सेकंड में…",
+    "play_now": "अभी चलाएँ",
+    "protected_title": "सुरक्षित कंटेंट",
+    "protected_body": "यह विंडो दिखाई न देने पर प्लेबैक रोक दिया जाता है।",
+    "resume": "जारी रखें"
+  },
+  "my_list": {
+    "empty_title": "आपकी सूची खाली है",
+    "empty_hint_prefix": "किसी भी शीर्षक पर जाएँ और",
+    "empty_hint_suffix": "बटन दबाकर उसे यहाँ सहेजें। अपने सभी डिवाइस पर वहीं से देखना जारी रखें जहाँ छोड़ा था।",
+    "browse_catalog": "कैटलॉग ब्राउज़ करें"
+  },
+  "history": {
+    "title": "देखने की गतिविधि",
+    "subtitle": "आपने जो कुछ भी देखा, पूरा किया या रोका — सब यहाँ है। यहाँ से कोई शीर्षक हटाने पर उसकी सारी प्रगति मिट जाती है।",
+    "empty": "अभी तक कोई देखने की गतिविधि नहीं।",
+    "finished": "पूरा देखा",
+    "hidden": "'देखना जारी रखें' से छिपाया गया",
+    "percent_watched": "{{percent}}% देखा गया",
+    "remove": "हटाएँ",
+    "page": "पेज {{page}}"
   },
   "subscribe": {
     "title": "अपनी योजना चुनें",
@@ -92,6 +159,38 @@
     "feature_quality": "जहाँ उपलब्ध हो वहाँ HD + 4K",
     "feature_devices": "वेब, मोबाइल, टीवी पर देखें",
     "feature_cancel": "कभी भी रद्द करें"
+  },
+  "account": {
+    "title": "खाता",
+    "your_details": "आपका विवरण",
+    "name": "नाम",
+    "role": "भूमिका",
+    "member_since": "सदस्यता आरंभ",
+    "change_password": "पासवर्ड बदलें",
+    "change_password_hint": "पासवर्ड बदलने पर आप बाक़ी सभी जगह से साइन आउट हो जाएँगे।",
+    "current_password": "मौजूदा पासवर्ड",
+    "new_password": "नया पासवर्ड",
+    "confirm_password": "नए पासवर्ड की पुष्टि करें",
+    "password_too_short": "नया पासवर्ड कम से कम 8 अक्षरों का होना चाहिए।",
+    "password_mismatch": "नए पासवर्ड मेल नहीं खाते।",
+    "password_changed": "पासवर्ड बदल दिया गया। आपके बाक़ी सभी सेशन साइन आउट कर दिए गए हैं।",
+    "changing": "बदला जा रहा है…"
+  },
+  "footer": {
+    "questions": "सवाल हैं? हमसे संपर्क करें।",
+    "faq": "अक्सर पूछे जाने वाले सवाल",
+    "investor_relations": "निवेशक संबंध",
+    "privacy": "गोपनीयता",
+    "help_centre": "सहायता केंद्र",
+    "jobs": "नौकरियाँ",
+    "cookie_preferences": "कुकी प्राथमिकताएँ",
+    "account": "खाता",
+    "ways_to_watch": "देखने के तरीक़े",
+    "corporate_information": "कॉर्पोरेट जानकारी",
+    "media_centre": "मीडिया केंद्र",
+    "terms_of_use": "उपयोग की शर्तें",
+    "contact_us": "हमसे संपर्क करें",
+    "copyright": "© 2026 CinePile"
   },
   "profiles": {
     "title_who": "कौन देख रहा है?",

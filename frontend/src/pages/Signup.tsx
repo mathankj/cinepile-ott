@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { auth } from "../api";
 import { apiErrorMessage } from "../api/client";
 import { useAuthStore } from "../stores/auth";
 import AuthShell from "../components/auth/AuthShell";
 
 export default function Signup() {
+  const { t } = useTranslation();
   const nav = useNavigate();
   const setAuth = useAuthStore((s) => s.setAuth);
   const [email, setEmail] = useState("");
@@ -23,7 +25,7 @@ export default function Signup() {
       setAuth(res.tokens.access_token, res.tokens.refresh_token, res.user);
       nav("/", { replace: true });
     } catch (e) {
-      setErr(apiErrorMessage(e, "Couldn't create your account."));
+      setErr(apiErrorMessage(e, t("auth.signup_failed")));
     } finally {
       setBusy(false);
     }
@@ -31,12 +33,12 @@ export default function Signup() {
 
   return (
     <AuthShell
-      title="Create your account"
+      title={t("auth.sign_up_title")}
       footer={
         <span>
-          Already on CinePile?{" "}
+          {t("auth.already_member")}{" "}
           <Link to="/login" className="text-white hover:underline">
-            Sign in
+            {t("auth.sign_in_link")}
           </Link>
           .
         </span>
@@ -46,7 +48,7 @@ export default function Signup() {
         <FloatingField
           id="signup-name"
           type="text"
-          label="Full name"
+          label={t("auth.full_name")}
           autoComplete="name"
           value={name}
           onChange={setName}
@@ -54,7 +56,7 @@ export default function Signup() {
         <FloatingField
           id="signup-email"
           type="email"
-          label="Email"
+          label={t("auth.email")}
           autoComplete="email"
           value={email}
           onChange={setEmail}
@@ -63,7 +65,7 @@ export default function Signup() {
         <FloatingField
           id="signup-password"
           type="password"
-          label="Password (8+ characters)"
+          label={t("auth.password_hint")}
           autoComplete="new-password"
           value={password}
           onChange={setPassword}
@@ -83,7 +85,7 @@ export default function Signup() {
           disabled={busy}
           className="mt-2 w-full rounded bg-[var(--color-brand)] py-3 text-base font-semibold text-white transition-colors hover:bg-[var(--color-brand-hover)] active:bg-[var(--color-brand-dark)] disabled:opacity-60"
         >
-          {busy ? "Creating account…" : "Sign Up"}
+          {busy ? t("auth.creating_account") : t("auth.sign_up_cta")}
         </button>
       </form>
     </AuthShell>

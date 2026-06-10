@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { progress } from "../api";
 
 /**
@@ -9,6 +10,7 @@ import { progress } from "../api";
  * Each row has a "Remove" button that hard-deletes via the backend.
  */
 export default function History() {
+  const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
@@ -23,15 +25,15 @@ export default function History() {
 
   return (
     <div className="px-4 md:px-8 lg:px-[60px] py-12">
-      <h1 className="mb-2 text-[2rem] font-bold">Viewing Activity</h1>
+      <h1 className="mb-2 text-[2rem] font-bold">{t("history.title")}</h1>
       <p className="mb-8 text-sm text-white/60">
-        Everything you've ever watched, finished, or paused. Removing a title here erases all your progress for it.
+        {t("history.subtitle")}
       </p>
 
-      {isLoading && <div className="text-white/60">Loading…</div>}
+      {isLoading && <div className="text-white/60">{t("common.loading")}</div>}
       {data && data.items.length === 0 && (
         <div className="rounded border border-white/10 bg-[var(--color-bg-elevated)] p-8 text-center text-white/60">
-          No viewing activity yet.
+          {t("history.empty")}
         </div>
       )}
 
@@ -57,17 +59,17 @@ export default function History() {
                 <div className="mt-0.5 text-xs text-white/60">
                   {new Date(h.last_played_at).toLocaleDateString()}
                   {h.completed
-                    ? " · Finished"
+                    ? ` · ${t("history.finished")}`
                     : h.hidden_from_continue
-                    ? " · Hidden from Continue Watching"
-                    : ` · ${Math.floor((h.position_sec / h.total_sec) * 100)}% watched`}
+                    ? ` · ${t("history.hidden")}`
+                    : ` · ${t("history.percent_watched", { percent: Math.floor((h.position_sec / h.total_sec) * 100) })}`}
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => removeM.mutate(h.title.id)}
                 className="rounded border border-white/20 px-3 py-1.5 text-sm text-white/70 hover:border-red-500 hover:text-red-400"
-                aria-label="Remove"
+                aria-label={t("history.remove")}
               >
                 <Trash2 size={16} />
               </button>
@@ -83,15 +85,15 @@ export default function History() {
             onClick={() => setPage(page - 1)}
             className="rounded border border-white/20 px-3 py-1.5 disabled:opacity-40"
           >
-            Prev
+            {t("browse.prev")}
           </button>
-          <span className="text-white/60">Page {page}</span>
+          <span className="text-white/60">{t("history.page", { page })}</span>
           <button
             disabled={page * 20 >= data.total}
             onClick={() => setPage(page + 1)}
             className="rounded border border-white/20 px-3 py-1.5 disabled:opacity-40"
           >
-            Next
+            {t("browse.next")}
           </button>
         </div>
       )}
