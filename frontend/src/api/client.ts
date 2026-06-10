@@ -1,13 +1,16 @@
 /**
- * Axios instance with auth interceptor.
+ * Axios instance with auth + active-profile interceptors.
  *
  * - Attaches the access token from the auth store to every request.
+ * - Attaches X-Profile-Id from the profile store so the backend scopes
+ *   watchlist / progress / reactions / home rows to the active profile.
  * - On 401, tries to refresh once (rotates the refresh token), retries the
  *   original request, and on second 401 clears auth + redirects to /login.
  * - Calls /v1/* via the Vite proxy in dev, direct URL in prod.
  */
 import axios, { type AxiosError, type AxiosRequestConfig } from "axios";
 import { useAuthStore } from "../stores/auth";
+import { useProfileStore } from "../stores/profile";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -19,6 +22,16 @@ export const api = axios.create({
 api.interceptors.request.use((config) => {
   const token = useAuthStore.getState().accessToken;
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+// Active-profile scoping — its own interceptor, deliberately separate from the
+// auth/refresh logic above. The backend verifies ownership server-side and
+// silently ignores ids that don't belong to the authenticated user, so a stale
+// localStorage value can never scope into someone else's data.
+api.interceptors.request.use((config) => {
+  const profile = useProfileStore.getState().active;
+  if (profile) config.headers["X-Profile-Id"] = String(profile.id);
   return config;
 });
 

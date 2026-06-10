@@ -4,9 +4,12 @@ Per-user, per-watchable progress. Replaces V1's WatchHistory.
 Movies: one row per (user, title) — episode_id is NULL.
 Series: one row per (user, episode) — title_id is the series, episode_id is the playable.
 
-Unique on (user_id, title_id, episode_id). Both Postgres and SQLite treat NULL as
-distinct in unique indexes, so this works for movies (single NULL row per (user,title))
-and for series (multiple non-NULL rows per (user,title)).
+Unique on (user_id, profile_id, title_id, episode_id). Both Postgres and SQLite
+treat NULL as distinct in unique indexes, so this works for movies (single NULL
+episode row per (user, profile, title)) and for series (multiple non-NULL rows).
+Note the same NULL semantics apply to profile_id: rows with profile_id NULL
+(legacy / no-profile scope) are NOT deduped by the constraint — the app-level
+select-then-upsert in services/history.py is what guarantees one row there.
 """
 from __future__ import annotations
 
@@ -21,10 +24,19 @@ from app.db.base import Base
 class WatchProgress(Base):
     __tablename__ = "watch_progress"
     __table_args__ = (
-        UniqueConstraint("user_id", "title_id", "episode_id", name="uq_watch_progress_unique"),
+        UniqueConstraint(
+            "user_id", "profile_id", "title_id", "episode_id", name="uq_watch_progress_unique"
+        ),
     )
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    # Which profile within the account watched this. NULL = legacy rows from
+    # before profile scoping, or requests sent without an X-Profile-Id header.
+    # ondelete SET NULL: deleting a profile folds its history back into the
+    # account-level (no-profile) scope instead of erasing it.
+    profile_id: Mapped[int | None] = mapped_column(
+        ForeignKey("profiles.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     title_id: Mapped[int] = mapped_column(ForeignKey("titles.id", ondelete="CASCADE"), index=True)
     episode_id: Mapped[int | None] = mapped_column(
         ForeignKey("episodes.id", ondelete="CASCADE"), nullable=True, index=True

@@ -1,11 +1,14 @@
 """
 Watch progress service — replaces V1's history.
 
-Movies: one row per (user, title), episode_id = NULL.
-Series: one row per (user, episode), title_id = the series.
+Movies: one row per (user, profile, title), episode_id = NULL.
+Series: one row per (user, profile, episode), title_id = the series.
 
 Continue-watching collapses series rows back up to their parent title,
 showing the most-recently-played episode as the resume target.
+
+Every function takes the active `profile` (None = legacy/no-header scope) and
+filters via profile_scope() so each profile keeps a fully separate history.
 """
 from __future__ import annotations
 
@@ -16,10 +19,12 @@ from sqlalchemy import and_, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.episode import Episode
+from app.models.profile import Profile
 from app.models.season import Season
 from app.models.title import Title
 from app.models.user import User
 from app.models.watch_progress import WatchProgress
+from app.services.profile import profile_scope
 
 COMPLETION_THRESHOLD = 0.9
 
@@ -60,7 +65,13 @@ def _bust_home(user_id: int) -> None:
 
 
 async def upsert_movie_progress(
-    db: AsyncSession, user: User, *, title_id: int, position_sec: int, total_sec: int
+    db: AsyncSession,
+    user: User,
+    *,
+    title_id: int,
+    position_sec: int,
+    total_sec: int,
+    profile: Profile | None = None,
 ) -> WatchProgress:
     await _ensure_movie_playable(db, title_id)
     now = datetime.now(tz=timezone.utc)
@@ -69,6 +80,7 @@ async def upsert_movie_progress(
         select(WatchProgress).where(
             and_(
                 WatchProgress.user_id == user.id,
+                profile_scope(WatchProgress.profile_id, profile),
                 WatchProgress.title_id == title_id,
                 WatchProgress.episode_id.is_(None),
             )
@@ -77,6 +89,7 @@ async def upsert_movie_progress(
     if row is None:
         row = WatchProgress(
             user_id=user.id,
+            profile_id=profile.id if profile else None,
             title_id=title_id,
             episode_id=None,
             position_sec=position_sec,
@@ -98,7 +111,13 @@ async def upsert_movie_progress(
 
 
 async def upsert_episode_progress(
-    db: AsyncSession, user: User, *, episode_id: int, position_sec: int, total_sec: int
+    db: AsyncSession,
+    user: User,
+    *,
+    episode_id: int,
+    position_sec: int,
+    total_sec: int,
+    profile: Profile | None = None,
 ) -> WatchProgress:
     ep, _, title = await _ensure_episode_playable(db, episode_id)
     now = datetime.now(tz=timezone.utc)
@@ -107,6 +126,7 @@ async def upsert_episode_progress(
         select(WatchProgress).where(
             and_(
                 WatchProgress.user_id == user.id,
+                profile_scope(WatchProgress.profile_id, profile),
                 WatchProgress.title_id == title.id,
                 WatchProgress.episode_id == ep.id,
             )
@@ -115,6 +135,7 @@ async def upsert_episode_progress(
     if row is None:
         row = WatchProgress(
             user_id=user.id,
+            profile_id=profile.id if profile else None,
             title_id=title.id,
             episode_id=ep.id,
             position_sec=position_sec,
@@ -136,7 +157,7 @@ async def upsert_episode_progress(
 
 
 async def continue_watching(
-    db: AsyncSession, user: User, *, limit: int = 20
+    db: AsyncSession, user: User, *, limit: int = 20, profile: Profile | None = None
 ) -> list[dict]:
     """
     Returns [{title, episode?, position_sec, total_sec, last_played_at}].
@@ -155,6 +176,7 @@ async def continue_watching(
         .outerjoin(Season, Season.id == Episode.season_id)
         .where(
             WatchProgress.user_id == user.id,
+            profile_scope(WatchProgress.profile_id, profile),
             WatchProgress.hidden_from_continue.is_(False),
             WatchProgress.completed.is_(False),
             Title.deleted_at.is_(None),
@@ -184,17 +206,24 @@ async def continue_watching(
     return list(grouped.values())
 
 
-async def hide_title_from_continue(db: AsyncSession, user: User, *, title_id: int) -> int:
+async def hide_title_from_continue(
+    db: AsyncSession, user: User, *, title_id: int, profile: Profile | None = None
+) -> int:
     """
     "Remove from Continue Watching" — soft-hide, don't hard-delete.
     The row stays so if the user searches the title later and resumes, their
     position is intact. This is Netflix's documented behaviour.
+    Scoped: hiding on one profile must not hide it for the others.
     """
     from sqlalchemy import update as sa_update
 
     res = await db.execute(
         sa_update(WatchProgress)
-        .where(WatchProgress.user_id == user.id, WatchProgress.title_id == title_id)
+        .where(
+            WatchProgress.user_id == user.id,
+            profile_scope(WatchProgress.profile_id, profile),
+            WatchProgress.title_id == title_id,
+        )
         .values(hidden_from_continue=True)
     )
     return res.rowcount or 0
@@ -205,7 +234,12 @@ delete_title_progress = hide_title_from_continue
 
 
 async def list_full_history(
-    db: AsyncSession, user: User, *, page: int = 1, page_size: int = 20
+    db: AsyncSession,
+    user: User,
+    *,
+    page: int = 1,
+    page_size: int = 20,
+    profile: Profile | None = None,
 ) -> tuple[list[tuple[WatchProgress, Title]], int]:
     """
     Full viewing history — all titles the user has ever pressed play on.
@@ -220,6 +254,7 @@ async def list_full_history(
 
     base_where = [
         WatchProgress.user_id == user.id,
+        profile_scope(WatchProgress.profile_id, profile),
         Title.deleted_at.is_(None),
     ]
 
@@ -247,23 +282,34 @@ async def list_full_history(
     return deduped[start : start + page_size], total
 
 
-async def remove_from_history(db: AsyncSession, user: User, *, title_id: int) -> int:
-    """Hard-delete every WatchProgress row for (user, title) — the user genuinely
-    doesn't want any record of this title in their account. Different from
-    hide_title_from_continue() which is soft-hide for the continue-watching row."""
+async def remove_from_history(
+    db: AsyncSession, user: User, *, title_id: int, profile: Profile | None = None
+) -> int:
+    """Hard-delete every WatchProgress row for (user, profile, title) — the user
+    genuinely doesn't want any record of this title on this profile. Different
+    from hide_title_from_continue() which is soft-hide for the continue-watching
+    row. Scoped: wiping history on one profile leaves the others intact."""
     res = await db.execute(
         delete(WatchProgress).where(
-            WatchProgress.user_id == user.id, WatchProgress.title_id == title_id
+            WatchProgress.user_id == user.id,
+            profile_scope(WatchProgress.profile_id, profile),
+            WatchProgress.title_id == title_id,
         )
     )
     return res.rowcount or 0
 
 
-async def finished_title_ids(db: AsyncSession, user: User, *, limit: int = 3) -> list[int]:
-    """The user's N most recently finished titles. Used by Because-You-Watched."""
+async def finished_title_ids(
+    db: AsyncSession, user: User, *, limit: int = 3, profile: Profile | None = None
+) -> list[int]:
+    """The profile's N most recently finished titles. Used by Because-You-Watched."""
     stmt = (
         select(WatchProgress.title_id, WatchProgress.last_played_at)
-        .where(WatchProgress.user_id == user.id, WatchProgress.completed.is_(True))
+        .where(
+            WatchProgress.user_id == user.id,
+            profile_scope(WatchProgress.profile_id, profile),
+            WatchProgress.completed.is_(True),
+        )
         .order_by(WatchProgress.last_played_at.desc())
         .limit(limit)
     )

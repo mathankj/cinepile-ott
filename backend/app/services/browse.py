@@ -27,21 +27,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload
 
 from app.models.genre import Genre
+from app.models.profile import Profile
 from app.models.reaction import Reaction
 from app.models.title import Title, titles_genres
 from app.models.user import User
 from app.models.watchlist import WatchlistItem
 from app.models.watch_progress import WatchProgress
 from app.services import history as history_svc
+from app.services.profile import KID_SAFE_RATINGS, is_kid_safe, profile_scope
 
+# Cache keys: (user_id_or_none, profile_id_or_none, country). The profile id
+# MUST be part of the key — rows are profile-scoped (and kid-filtered), so a
+# cache hit across profiles would leak one profile's home to another.
+_CacheKey = tuple[int | None, int | None, str | None]
 
-# Per-process TTL cache for /v1/home. Each entry is keyed by
-# (user_id_or_none, country) and holds (rows, expires_at). On a cold Neon
-# connection the home page does 5-10 sequential round trips that add up to
-# 15-30 s — caching for 60 s means the first visit pays once and every
-# subsequent visit by anyone (or by the same user+country) is sub-100 ms.
+# Per-process TTL cache for /v1/home. On a cold Neon connection the home page
+# does 5-10 sequential round trips that add up to 15-30 s — caching for 60 s
+# means the first visit pays once and every subsequent visit by anyone (or by
+# the same user+profile+country) is sub-100 ms.
 # This is the same trick Netflix uses (their home is cached server-side too).
-_HOME_CACHE: dict[tuple[int | None, str | None], tuple[list[dict], float]] = {}
+_HOME_CACHE: dict[_CacheKey, tuple[list[dict], float]] = {}
 # Bumped from 60s → 300s. On the free Render tier the backend cold-starts often;
 # a longer TTL means a single warm session serves many tab switches without
 # re-hitting Neon. Admin writes invalidate via invalidate_home_cache().
@@ -57,7 +62,7 @@ _HOME_CACHE_MAX_ENTRIES = 512
 # user's home request — even cache HITS that merely wanted the double-check.
 # Per-key locks keep the stampede protection (only one build per key) without
 # serializing unrelated users behind it.
-_HOME_CACHE_LOCKS: dict[tuple[int | None, str | None], asyncio.Lock] = {}
+_HOME_CACHE_LOCKS: dict[_CacheKey, asyncio.Lock] = {}
 
 
 def invalidate_home_cache(user_id: int | None = None) -> None:
@@ -85,32 +90,60 @@ def _published_filter():
     return and_(Title.status == "published", Title.deleted_at.is_(None))
 
 
-async def _new_releases(db: AsyncSession, *, days: int = 30, limit: int = ROW_DEFAULT_CAP) -> list[Title]:
+def _kid_filter(profile: Profile | None) -> list:
+    """Extra WHERE clauses when the active profile is a kid.
+
+    Kid profiles only ever see U-rated titles on home; NULL age_rating fails
+    closed (excluded). Returns [] for adult/no profile so the clause unpacks
+    away in the callers.
+
+    KNOWN GAP: this only covers the home rows built in this module. The full
+    catalog list + search live in services/catalog.py behind routes on another
+    branch, so kid profiles can still *browse* non-U titles there — but they
+    can never PLAY them (playback enforces kid_profile_restricted server-side).
+    """
+    if profile is not None and profile.kind == "kid":
+        return [Title.age_rating.in_(KID_SAFE_RATINGS)]
+    return []
+
+
+async def _new_releases(
+    db: AsyncSession, *, days: int = 30, limit: int = ROW_DEFAULT_CAP, profile: Profile | None = None
+) -> list[Title]:
     since = datetime.now(tz=timezone.utc) - timedelta(days=days)
     stmt = (
         select(Title)
         .options(_SUMMARY_ONLY)
-        .where(_published_filter(), Title.published_at.is_not(None), Title.published_at >= since)
+        .where(
+            _published_filter(),
+            *_kid_filter(profile),
+            Title.published_at.is_not(None),
+            Title.published_at >= since,
+        )
         .order_by(Title.published_at.desc())
         .limit(limit)
     )
     return list((await db.scalars(stmt)).unique().all())
 
 
-async def _trending(db: AsyncSession, *, limit: int = ROW_DEFAULT_CAP) -> list[Title]:
+async def _trending(
+    db: AsyncSession, *, limit: int = ROW_DEFAULT_CAP, profile: Profile | None = None
+) -> list[Title]:
     """V1.5: use raw view_count as a proxy for trending.
     V2 will move to a windowed sum from a daily metrics table."""
     stmt = (
         select(Title)
         .options(_SUMMARY_ONLY)
-        .where(_published_filter())
+        .where(_published_filter(), *_kid_filter(profile))
         .order_by(Title.view_count.desc(), Title.id.desc())
         .limit(limit)
     )
     return list((await db.scalars(stmt)).unique().all())
 
 
-async def _top_in_country(db: AsyncSession, country: str, *, limit: int = 10) -> list[Title]:
+async def _top_in_country(
+    db: AsyncSession, country: str, *, limit: int = 10, profile: Profile | None = None
+) -> list[Title]:
     if not country:
         return []
     stmt = (
@@ -118,6 +151,7 @@ async def _top_in_country(db: AsyncSession, country: str, *, limit: int = 10) ->
         .options(_SUMMARY_ONLY)
         .where(
             _published_filter(),
+            *_kid_filter(profile),
             func.cast(Title.countries, String).like(f'%"{country}"%'),
         )
         .order_by(Title.view_count.desc())
@@ -127,7 +161,12 @@ async def _top_in_country(db: AsyncSession, country: str, *, limit: int = 10) ->
 
 
 async def _because_you_watched(
-    db: AsyncSession, seed_title_id: int, *, exclude_title_ids: set[int], limit: int = ROW_DEFAULT_CAP
+    db: AsyncSession,
+    seed_title_id: int,
+    *,
+    exclude_title_ids: set[int],
+    limit: int = ROW_DEFAULT_CAP,
+    profile: Profile | None = None,
 ) -> list[Title]:
     """Titles sharing at least one genre with the seed, excluding seed + already-watched."""
     seed_genre_ids = (
@@ -144,6 +183,7 @@ async def _because_you_watched(
         .join(titles_genres, titles_genres.c.title_id == Title.id)
         .where(
             _published_filter(),
+            *_kid_filter(profile),
             titles_genres.c.genre_id.in_(seed_genre_ids),
             Title.id != seed_title_id,
             *([Title.id.notin_(exclude_title_ids)] if exclude_title_ids else []),
@@ -155,14 +195,16 @@ async def _because_you_watched(
     return list((await db.scalars(stmt)).unique().all())
 
 
-async def _user_top_genres(db: AsyncSession, user: User, *, limit: int = 3) -> list[Genre]:
-    """Genres the user has watched most (by play count, not weighted by duration)."""
+async def _user_top_genres(
+    db: AsyncSession, user: User, *, limit: int = 3, profile: Profile | None = None
+) -> list[Genre]:
+    """Genres the profile has watched most (by play count, not weighted by duration)."""
     stmt = (
         select(Genre, func.count(WatchProgress.id).label("plays"))
         .join(titles_genres, titles_genres.c.genre_id == Genre.id)
         .join(Title, Title.id == titles_genres.c.title_id)
         .join(WatchProgress, WatchProgress.title_id == Title.id)
-        .where(WatchProgress.user_id == user.id)
+        .where(WatchProgress.user_id == user.id, profile_scope(WatchProgress.profile_id, profile))
         .group_by(Genre.id)
         .order_by(func.count(WatchProgress.id).desc())
         .limit(limit)
@@ -171,13 +213,13 @@ async def _user_top_genres(db: AsyncSession, user: User, *, limit: int = 3) -> l
 
 
 async def _titles_by_genre(
-    db: AsyncSession, genre_id: int, *, limit: int = ROW_DEFAULT_CAP
+    db: AsyncSession, genre_id: int, *, limit: int = ROW_DEFAULT_CAP, profile: Profile | None = None
 ) -> list[Title]:
     stmt = (
         select(Title)
         .options(_SUMMARY_ONLY)
         .join(titles_genres, titles_genres.c.title_id == Title.id)
-        .where(_published_filter(), titles_genres.c.genre_id == genre_id)
+        .where(_published_filter(), *_kid_filter(profile), titles_genres.c.genre_id == genre_id)
         .order_by(Title.view_count.desc(), Title.id.desc())
         .limit(limit)
     )
@@ -185,7 +227,7 @@ async def _titles_by_genre(
 
 
 async def recommended_for_you(
-    db: AsyncSession, user: User, *, limit: int = ROW_DEFAULT_CAP
+    db: AsyncSession, user: User, *, limit: int = ROW_DEFAULT_CAP, profile: Profile | None = None
 ) -> list[Title]:
     """Lightweight recommendations.
 
@@ -210,6 +252,7 @@ async def recommended_for_you(
             await db.scalars(
                 select(Reaction.title_id).where(
                     Reaction.user_id == user.id,
+                    profile_scope(Reaction.profile_id, profile),
                     Reaction.kind.in_(("thumbs_up", "double_thumbs_up")),
                 )
             )
@@ -218,7 +261,10 @@ async def recommended_for_you(
     list_ids = list(
         (
             await db.scalars(
-                select(WatchlistItem.title_id).where(WatchlistItem.user_id == user.id)
+                select(WatchlistItem.title_id).where(
+                    WatchlistItem.user_id == user.id,
+                    profile_scope(WatchlistItem.profile_id, profile),
+                )
             )
         ).all()
     )
@@ -226,7 +272,10 @@ async def recommended_for_you(
         (
             await db.scalars(
                 select(WatchProgress.title_id)
-                .where(WatchProgress.user_id == user.id)
+                .where(
+                    WatchProgress.user_id == user.id,
+                    profile_scope(WatchProgress.profile_id, profile),
+                )
                 .order_by(WatchProgress.updated_at.desc())
                 .limit(10)
             )
@@ -257,6 +306,7 @@ async def recommended_for_you(
         .join(titles_genres, titles_genres.c.title_id == Title.id)
         .where(
             _published_filter(),
+            *_kid_filter(profile),
             titles_genres.c.genre_id.in_(genre_ids),
             Title.id.notin_(seed_ids),
         )
@@ -266,12 +316,19 @@ async def recommended_for_you(
     return list((await db.scalars(stmt)).unique().all())
 
 
-async def _my_list_titles(db: AsyncSession, user: User, *, limit: int = 50) -> list[Title]:
+async def _my_list_titles(
+    db: AsyncSession, user: User, *, limit: int = 50, profile: Profile | None = None
+) -> list[Title]:
     stmt = (
         select(Title)
         .options(_SUMMARY_ONLY)
         .join(WatchlistItem, WatchlistItem.title_id == Title.id)
-        .where(_published_filter(), WatchlistItem.user_id == user.id)
+        .where(
+            _published_filter(),
+            *_kid_filter(profile),
+            WatchlistItem.user_id == user.id,
+            profile_scope(WatchlistItem.profile_id, profile),
+        )
         .order_by(WatchlistItem.added_at.desc())
         .limit(limit)
     )
@@ -283,13 +340,14 @@ async def build_home(
     user: User | None,
     *,
     country: str | None = None,
+    profile: Profile | None = None,
 ) -> list[dict]:
     """Returns a list of dicts: [{kind, title, items: [Title]}, ...]
 
-    Cached per (user_id, country) for _HOME_CACHE_TTL_SECONDS. The per-key
-    lock prevents thundering-herd rebuilds for the SAME key while letting
-    other users' requests proceed in parallel."""
-    cache_key = (user.id if user else None, country)
+    Cached per (user_id, profile_id, country) for _HOME_CACHE_TTL_SECONDS.
+    The per-key lock prevents thundering-herd rebuilds for the SAME key while
+    letting other users' requests proceed in parallel."""
+    cache_key: _CacheKey = (user.id if user else None, profile.id if profile else None, country)
     now = time.monotonic()
     cached = _HOME_CACHE.get(cache_key)
     if cached and cached[1] > now:
@@ -304,7 +362,7 @@ async def build_home(
             cached = _HOME_CACHE.get(cache_key)
             if cached and cached[1] > time.monotonic():
                 return cached[0]
-            rows = await _build_home_uncached(db, user, country=country)
+            rows = await _build_home_uncached(db, user, country=country, profile=profile)
             if cache_key not in _HOME_CACHE and len(_HOME_CACHE) >= _HOME_CACHE_MAX_ENTRIES:
                 # Evict oldest insertion so the dict can't grow without bound.
                 _HOME_CACHE.pop(next(iter(_HOME_CACHE)))
@@ -322,11 +380,17 @@ async def _build_home_uncached(
     user: User | None,
     *,
     country: str | None = None,
+    profile: Profile | None = None,
 ) -> list[dict]:
     rows: list[dict] = []
 
     if user is not None:
-        cw = await history_svc.continue_watching(db, user)
+        cw = await history_svc.continue_watching(db, user, profile=profile)
+        if profile is not None and profile.kind == "kid":
+            # Defense in depth: a kid profile's own history should already be
+            # U-only (playback is blocked), but legacy/edge rows could exist —
+            # never show them on a kids home.
+            cw = [c for c in cw if is_kid_safe(c["title"].age_rating)]
         if cw:
             rows.append(
                 {
@@ -336,31 +400,35 @@ async def _build_home_uncached(
                 }
             )
 
-        my_list_items = await _my_list_titles(db, user)
+        my_list_items = await _my_list_titles(db, user, profile=profile)
         if my_list_items:
             rows.append({"kind": "my_list", "title": "My List", "items": my_list_items})
 
         # Recommendations row — fires whenever the user has ANY signal (reaction,
         # watchlist, progress). Stronger than "Because you watched" because it
         # doesn't require a FINISHED watch.
-        recs = await recommended_for_you(db, user)
+        recs = await recommended_for_you(db, user, profile=profile)
         if recs:
             rows.append({"kind": "recommended", "title": "Recommended for You", "items": recs})
 
-    rows.append({"kind": "new_releases", "title": "New Releases", "items": await _new_releases(db)})
-    rows.append({"kind": "trending_now", "title": "Trending Now", "items": await _trending(db)})
+    rows.append(
+        {"kind": "new_releases", "title": "New Releases", "items": await _new_releases(db, profile=profile)}
+    )
+    rows.append(
+        {"kind": "trending_now", "title": "Trending Now", "items": await _trending(db, profile=profile)}
+    )
 
     if country:
         rows.append(
             {
                 "kind": "top_in_country",
                 "title": f"Top 10 in {country}",
-                "items": await _top_in_country(db, country),
+                "items": await _top_in_country(db, country, profile=profile),
             }
         )
 
     if user is not None:
-        finished = await history_svc.finished_title_ids(db, user)
+        finished = await history_svc.finished_title_ids(db, user, profile=profile)
         watched_ids: set[int] = set(finished)
         for seed_id in finished[:2]:  # cap at 2 BYW rows
             # find the seed title's name for the row label
@@ -368,15 +436,17 @@ async def _build_home_uncached(
             label = (
                 f"Because You Watched {seed_title.title}" if seed_title is not None else "Because You Watched"
             )
-            byw_items = await _because_you_watched(db, seed_id, exclude_title_ids=watched_ids)
+            byw_items = await _because_you_watched(
+                db, seed_id, exclude_title_ids=watched_ids, profile=profile
+            )
             if byw_items:
                 rows.append(
                     {"kind": f"because_you_watched:{seed_id}", "title": label, "items": byw_items}
                 )
 
-        # User's top genres
-        for g in await _user_top_genres(db, user):
-            items = await _titles_by_genre(db, g.id)
+        # Profile's top genres
+        for g in await _user_top_genres(db, user, profile=profile):
+            items = await _titles_by_genre(db, g.id, profile=profile)
             if items:
                 rows.append({"kind": f"genre:{g.slug}", "title": g.name, "items": items})
 

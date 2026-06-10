@@ -5,7 +5,7 @@ import time
 
 from fastapi import APIRouter, Query
 
-from app.api.deps import CurrentUserOptional, DbSession
+from app.api.deps import ActiveProfile, CurrentUserOptional, DbSession
 from app.schemas.home import HomeResponse, HomeRow
 from app.schemas.title import TitleSummary
 from app.services import browse
@@ -28,9 +28,11 @@ def invalidate_genres_cache() -> None:
 async def get_home(
     db: DbSession,
     user: CurrentUserOptional,
+    profile: ActiveProfile,
     country: str | None = Query(default=None, min_length=2, max_length=2),
 ) -> HomeResponse:
-    rows = await browse.build_home(db, user, country=country)
+    # Profile drives both row scoping and the cache key inside build_home.
+    rows = await browse.build_home(db, user, country=country, profile=profile)
     return HomeResponse(
         rows=[
             HomeRow(

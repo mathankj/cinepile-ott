@@ -28,6 +28,9 @@ export default function ProfilesPage() {
 
   function selectProfile(p: Profile) {
     setActive(p);
+    // Every profile has its own server-side watchlist/progress/home rows —
+    // drop ALL cached queries so nothing from the previous profile lingers.
+    qc.clear();
     nav("/", { replace: true });
   }
 
@@ -253,7 +256,7 @@ function ProfileFormModal({
             onChange={(e) => setKind(e.target.checked ? "kid" : "adult")}
             className="h-4 w-4 accent-white"
           />
-          Kids profile (filters content to U-rated)
+          Kids profile (only U-rated content can be watched)
         </label>
 
         {err && (
