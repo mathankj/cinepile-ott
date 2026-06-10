@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { Play } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { catalog } from "../api";
 
 /**
@@ -16,6 +17,7 @@ import { catalog } from "../api";
 const EPISODES_PER_PAGE = 12;
 
 export default function SeasonPage() {
+  const { t } = useTranslation();
   const { titleId, seasonNumber } = useParams();
   const tid = Number(titleId);
   const sn = Number(seasonNumber);
@@ -33,7 +35,7 @@ export default function SeasonPage() {
     enabled: Number.isFinite(tid),
   });
 
-  if (!season || !title) return <div className="p-8 text-white/60">Loading…</div>;
+  if (!season || !title) return <div className="p-8 text-white/60">{t("common.loading")}</div>;
 
   const totalEpisodes = season.episodes.length;
   const visibleEpisodes = season.episodes.slice(0, visibleCount);
@@ -45,12 +47,12 @@ export default function SeasonPage() {
         ← {title.title}
       </Link>
       <h1 className="mt-2 text-[2rem] font-bold">
-        {season.name || `Season ${season.season_number}`}
+        {season.name || t("title_detail.season_number", { number: season.season_number })}
       </h1>
       {season.synopsis && <p className="mt-2 max-w-[640px] text-white/70">{season.synopsis}</p>}
       {totalEpisodes > EPISODES_PER_PAGE && (
         <div className="mt-2 text-sm text-white/50">
-          Showing {Math.min(visibleCount, totalEpisodes)} of {totalEpisodes} episodes
+          {t("season.showing_episodes", { shown: Math.min(visibleCount, totalEpisodes), total: totalEpisodes })}
         </div>
       )}
 
@@ -72,15 +74,15 @@ export default function SeasonPage() {
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-white/50">Ep {ep.episode_number}</span>
+                  <span className="text-sm text-white/50">{t("season.ep_number", { number: ep.episode_number })}</span>
                   {ep.is_free && (
                     <span className="rounded bg-[var(--color-brand)] px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-white">
-                      FREE
+                      {t("billboard.free")}
                     </span>
                   )}
                   {!isPlayable && (
                     <span className="rounded bg-white/15 px-2 py-0.5 text-[11px] uppercase tracking-wider text-white/80">
-                      {ep.status === "scheduled" ? "Coming soon" : ep.status}
+                      {ep.status === "scheduled" ? t("season.coming_soon") : ep.status}
                     </span>
                   )}
                 </div>
@@ -90,7 +92,7 @@ export default function SeasonPage() {
                 )}
                 {ep.runtime_seconds && (
                   <div className="mt-1 text-xs text-white/50">
-                    {Math.round(ep.runtime_seconds / 60)} min
+                    {t("common.minutes", { minutes: Math.round(ep.runtime_seconds / 60) })}
                   </div>
                 )}
               </div>
@@ -100,7 +102,7 @@ export default function SeasonPage() {
                     to={`/watch/episode/${ep.id}`}
                     className="inline-flex items-center gap-2 rounded bg-white px-5 py-2.5 font-semibold text-black hover:bg-white/85"
                   >
-                    <Play size={16} className="fill-current" /> Play
+                    <Play size={16} className="fill-current" /> {t("title_detail.play")}
                   </Link>
                 ) : (
                   <button
@@ -108,7 +110,7 @@ export default function SeasonPage() {
                     disabled
                     className="inline-flex items-center gap-2 rounded bg-white/10 px-5 py-2.5 font-semibold text-white/40"
                   >
-                    Coming soon
+                    {t("season.coming_soon")}
                   </button>
                 )}
               </div>
@@ -124,7 +126,7 @@ export default function SeasonPage() {
             onClick={() => setVisibleCount((n) => Math.min(n + EPISODES_PER_PAGE, totalEpisodes))}
             className="rounded border border-white/30 px-6 py-2.5 text-sm font-semibold text-white/80 transition-colors hover:border-white hover:text-white"
           >
-            Show more episodes ({totalEpisodes - visibleCount} left)
+            {t("season.show_more", { remaining: totalEpisodes - visibleCount })}
           </button>
         </div>
       )}

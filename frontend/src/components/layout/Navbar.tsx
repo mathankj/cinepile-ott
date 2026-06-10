@@ -48,7 +48,7 @@ export default function Navbar() {
       >
         <div className="flex h-full items-center px-4 md:px-8 lg:px-[60px]">
           {/* Logo */}
-          <Link to="/" className="mr-6 md:mr-9 flex items-center" aria-label="CinePile home">
+          <Link to="/" className="mr-6 md:mr-9 flex items-center" aria-label={t("nav.brand_home")}>
             <span className="text-[1.4rem] md:text-[1.6rem] font-extrabold tracking-tight text-[var(--color-brand)]">
               CINEPILE
             </span>
@@ -123,7 +123,7 @@ export default function Navbar() {
               type="button"
               className="mb-6 text-white"
               onClick={() => setDrawerOpen(false)}
-              aria-label="Close menu"
+              aria-label={t("nav.close_menu")}
             >
               <X size={24} />
             </button>
@@ -199,14 +199,14 @@ export default function Navbar() {
  */
 function LanguagePicker() {
   const [open, setOpen] = useState(false);
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   return (
     <div className="relative">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="hover:text-white"
-        aria-label="Language"
+        aria-label={t("nav.language")}
         aria-expanded={open}
       >
         <Globe size={20} />

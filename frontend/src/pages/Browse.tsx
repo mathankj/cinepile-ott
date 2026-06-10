@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { catalog } from "../api";
 import { TitleCard } from "../components/title/TitleCard";
 
@@ -8,6 +9,7 @@ import { TitleCard } from "../components/title/TitleCard";
  * ?type=movie|series, ?genre=action, ?sort=-published_at, ?page=2
  */
 export default function Browse() {
+  const { t } = useTranslation();
   const [params, setParams] = useSearchParams();
   const filters = {
     type: (params.get("type") as "movie" | "series" | null) ?? undefined,
@@ -46,26 +48,26 @@ export default function Browse() {
     <div className="px-4 md:px-8 lg:px-[60px] py-12">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <h1 className="text-[2rem] font-bold">
-          {filters.type === "movie" ? "Movies" : filters.type === "series" ? "TV Shows" : "Browse"}
+          {filters.type === "movie" ? t("nav.movies") : filters.type === "series" ? t("nav.tv_shows") : t("browse.title")}
         </h1>
         <div className="flex flex-wrap gap-2">
           <select
             value={filters.type ?? ""}
             onChange={(e) => setParam("type", e.target.value || null)}
             className="rounded border border-white/20 bg-[var(--color-bg-surface)] px-3 py-2 text-sm"
-            aria-label="Title type"
+            aria-label={t("browse.filter_type")}
           >
-            <option value="">All types</option>
-            <option value="movie">Movies</option>
-            <option value="series">TV Shows</option>
+            <option value="">{t("browse.all_types")}</option>
+            <option value="movie">{t("nav.movies")}</option>
+            <option value="series">{t("nav.tv_shows")}</option>
           </select>
           <select
             value={filters.genre || ""}
             onChange={(e) => setParam("genre", e.target.value || null)}
             className="rounded border border-white/20 bg-[var(--color-bg-surface)] px-3 py-2 text-sm"
-            aria-label="Genre"
+            aria-label={t("browse.filter_genre")}
           >
-            <option value="">All genres</option>
+            <option value="">{t("browse.all_genres")}</option>
             {genresQ.data?.map((g) => (
               <option key={g.id} value={g.slug}>
                 {g.name}
@@ -76,13 +78,13 @@ export default function Browse() {
             value={filters.sort}
             onChange={(e) => setParam("sort", e.target.value)}
             className="rounded border border-white/20 bg-[var(--color-bg-surface)] px-3 py-2 text-sm"
-            aria-label="Sort"
+            aria-label={t("browse.filter_sort")}
           >
-            <option value="-published_at">Newest first</option>
-            <option value="published_at">Oldest first</option>
-            <option value="title">A → Z</option>
-            <option value="-title">Z → A</option>
-            <option value="-view_count">Most watched</option>
+            <option value="-published_at">{t("browse.sort_newest")}</option>
+            <option value="published_at">{t("browse.sort_oldest")}</option>
+            <option value="title">{t("browse.sort_az")}</option>
+            <option value="-title">{t("browse.sort_za")}</option>
+            <option value="-view_count">{t("browse.sort_most_watched")}</option>
           </select>
         </div>
       </header>
@@ -99,7 +101,7 @@ export default function Browse() {
 
       {data && data.items.length === 0 && (
         <div className="rounded border border-white/10 bg-[var(--color-bg-elevated)] p-8 text-center text-white/60">
-          No titles match. Try clearing filters.
+          {t("browse.empty")}
         </div>
       )}
 
@@ -138,6 +140,7 @@ function Pager({
   total: number;
   onPage: (p: number) => void;
 }) {
+  const { t } = useTranslation();
   const totalPages = Math.ceil(total / pageSize);
   return (
     <div className="mt-8 flex items-center justify-center gap-2 text-sm">
@@ -147,10 +150,10 @@ function Pager({
         onClick={() => onPage(page - 1)}
         className="rounded border border-white/20 px-3 py-1.5 disabled:opacity-40"
       >
-        Prev
+        {t("browse.prev")}
       </button>
       <span className="px-2 text-white/70">
-        Page {page} of {totalPages}
+        {t("browse.page_of", { page, total: totalPages })}
       </span>
       <button
         type="button"
@@ -158,7 +161,7 @@ function Pager({
         onClick={() => onPage(page + 1)}
         className="rounded border border-white/20 px-3 py-1.5 disabled:opacity-40"
       >
-        Next
+        {t("browse.next")}
       </button>
     </div>
   );

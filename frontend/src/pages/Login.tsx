@@ -94,7 +94,7 @@ export default function Login() {
           </label>
           {/* Real password-reset flow lives in Phase 2 (needs SMTP). Hide the
               link until then rather than send users to a dead page. */}
-          <span className="text-white/40" title="Coming soon — contact support meanwhile">
+          <span className="text-white/40" title={t("auth.help_coming_soon")}>
             {t("auth.need_help")}
           </span>
         </div>
