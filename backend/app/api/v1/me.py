@@ -1,12 +1,17 @@
 """
 User-personalized endpoints: continue-watching, watchlist, reactions, progress posts.
 All under /v1/me/* or /v1/titles/{id}/progress + /v1/episodes/{id}/progress.
+
+Everything here is scoped to the ACTIVE PROFILE (X-Profile-Id header, verified
+against the authenticated user in deps.get_active_profile). No header — or an
+invalid one — falls back to the legacy NULL-profile scope, so pre-profile data
+stays reachable.
 """
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import ActiveProfile, CurrentUser, DbSession
 from app.schemas.profile import (
     ProfileCreate,
     ProfileList,
@@ -46,8 +51,10 @@ def _err(exc, code: int) -> HTTPException:
 
 
 @router.get("/me/continue-watching", response_model=ContinueWatchingList)
-async def get_continue_watching(db: DbSession, user: CurrentUser) -> ContinueWatchingList:
-    items = await history_svc.continue_watching(db, user)
+async def get_continue_watching(
+    db: DbSession, user: CurrentUser, profile: ActiveProfile
+) -> ContinueWatchingList:
+    items = await history_svc.continue_watching(db, user, profile=profile)
     out = [
         ContinueWatchingItem(
             title=TitleSummary.model_validate(i["title"]),
@@ -65,10 +72,12 @@ async def get_continue_watching(db: DbSession, user: CurrentUser) -> ContinueWat
 
 
 @router.delete("/me/continue-watching/{title_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_continue_watching(title_id: int, db: DbSession, user: CurrentUser) -> None:
+async def delete_continue_watching(
+    title_id: int, db: DbSession, user: CurrentUser, profile: ActiveProfile
+) -> None:
     """Soft-hide from Continue Watching. Row stays so progress is preserved if
     the user comes back via search/deep-link."""
-    deleted = await history_svc.hide_title_from_continue(db, user, title_id=title_id)
+    deleted = await history_svc.hide_title_from_continue(db, user, title_id=title_id, profile=profile)
     if deleted == 0:
         raise HTTPException(
             404,
@@ -83,6 +92,7 @@ async def delete_continue_watching(title_id: int, db: DbSession, user: CurrentUs
 async def get_history(
     db: DbSession,
     user: CurrentUser,
+    profile: ActiveProfile,
     page: int = 1,
     page_size: int = 20,
 ) -> HistoryList:
@@ -97,7 +107,9 @@ async def get_history(
     """
     from app.schemas.title import TitleSummary
 
-    items, total = await history_svc.list_full_history(db, user, page=page, page_size=page_size)
+    items, total = await history_svc.list_full_history(
+        db, user, page=page, page_size=page_size, profile=profile
+    )
     return HistoryList(
         items=[
             HistoryItem(
@@ -117,13 +129,15 @@ async def get_history(
 
 
 @router.delete("/me/history/{title_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["history"])
-async def delete_history(title_id: int, db: DbSession, user: CurrentUser) -> None:
+async def delete_history(
+    title_id: int, db: DbSession, user: CurrentUser, profile: ActiveProfile
+) -> None:
     """Hard-delete every WatchProgress row for this title for the current user.
 
     Different from DELETE /me/continue-watching/{id} (which soft-hides):
     this one is "make this title disappear from my account entirely".
     """
-    deleted = await history_svc.remove_from_history(db, user, title_id=title_id)
+    deleted = await history_svc.remove_from_history(db, user, title_id=title_id, profile=profile)
     if deleted == 0:
         raise HTTPException(
             404,
@@ -136,11 +150,16 @@ async def delete_history(title_id: int, db: DbSession, user: CurrentUser) -> Non
 
 @router.post("/titles/{title_id}/progress", status_code=status.HTTP_204_NO_CONTENT, tags=["history"])
 async def post_movie_progress(
-    title_id: int, payload: ProgressUpdate, db: DbSession, user: CurrentUser
+    title_id: int, payload: ProgressUpdate, db: DbSession, user: CurrentUser, profile: ActiveProfile
 ) -> None:
     try:
         await history_svc.upsert_movie_progress(
-            db, user, title_id=title_id, position_sec=payload.position_sec, total_sec=payload.total_sec
+            db,
+            user,
+            title_id=title_id,
+            position_sec=payload.position_sec,
+            total_sec=payload.total_sec,
+            profile=profile,
         )
     except history_svc.NotPlayable as e:
         raise _err(e, 404) from e
@@ -152,11 +171,16 @@ async def post_movie_progress(
     tags=["history"],
 )
 async def post_episode_progress(
-    episode_id: int, payload: ProgressUpdate, db: DbSession, user: CurrentUser
+    episode_id: int, payload: ProgressUpdate, db: DbSession, user: CurrentUser, profile: ActiveProfile
 ) -> None:
     try:
         await history_svc.upsert_episode_progress(
-            db, user, episode_id=episode_id, position_sec=payload.position_sec, total_sec=payload.total_sec
+            db,
+            user,
+            episode_id=episode_id,
+            position_sec=payload.position_sec,
+            total_sec=payload.total_sec,
+            profile=profile,
         )
     except history_svc.NotPlayable as e:
         raise _err(e, 404) from e
@@ -167,10 +191,12 @@ async def post_episode_progress(
 
 @router.put("/titles/{title_id}/reaction", tags=["reactions"])
 async def set_reaction(
-    title_id: int, payload: ReactionWrite, db: DbSession, user: CurrentUser
+    title_id: int, payload: ReactionWrite, db: DbSession, user: CurrentUser, profile: ActiveProfile
 ) -> dict:
     try:
-        r = await reaction_svc.set_reaction(db, user, title_id=title_id, kind=payload.kind)
+        r = await reaction_svc.set_reaction(
+            db, user, title_id=title_id, kind=payload.kind, profile=profile
+        )
     except reaction_svc.TitleNotFound as e:
         raise _err(e, 404) from e
     except reaction_svc.InvalidReactionKind as e:
@@ -179,13 +205,17 @@ async def set_reaction(
 
 
 @router.delete("/titles/{title_id}/reaction", status_code=status.HTTP_204_NO_CONTENT, tags=["reactions"])
-async def clear_reaction(title_id: int, db: DbSession, user: CurrentUser) -> None:
-    await reaction_svc.clear_reaction(db, user, title_id=title_id)
+async def clear_reaction(
+    title_id: int, db: DbSession, user: CurrentUser, profile: ActiveProfile
+) -> None:
+    await reaction_svc.clear_reaction(db, user, title_id=title_id, profile=profile)
 
 
 @router.get("/me/reactions", response_model=ReactionList, tags=["reactions"])
-async def list_my_reactions(db: DbSession, user: CurrentUser) -> ReactionList:
-    items = await reaction_svc.list_reactions(db, user)
+async def list_my_reactions(
+    db: DbSession, user: CurrentUser, profile: ActiveProfile
+) -> ReactionList:
+    items = await reaction_svc.list_reactions(db, user, profile=profile)
     return ReactionList(
         items=[
             ReactionRead(title=TitleSummary.model_validate(t), kind=r.kind, updated_at=r.updated_at)
@@ -198,17 +228,21 @@ async def list_my_reactions(db: DbSession, user: CurrentUser) -> ReactionList:
 
 
 @router.post("/me/list/{title_id}", tags=["watchlist"])
-async def add_to_watchlist(title_id: int, db: DbSession, user: CurrentUser) -> dict:
+async def add_to_watchlist(
+    title_id: int, db: DbSession, user: CurrentUser, profile: ActiveProfile
+) -> dict:
     try:
-        _, created = await watchlist_svc.add(db, user, title_id=title_id)
+        _, created = await watchlist_svc.add(db, user, title_id=title_id, profile=profile)
     except watchlist_svc.TitleNotFound as e:
         raise _err(e, 404) from e
     return {"title_id": title_id, "added": created}
 
 
 @router.delete("/me/list/{title_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["watchlist"])
-async def remove_from_watchlist(title_id: int, db: DbSession, user: CurrentUser) -> None:
-    deleted = await watchlist_svc.remove(db, user, title_id=title_id)
+async def remove_from_watchlist(
+    title_id: int, db: DbSession, user: CurrentUser, profile: ActiveProfile
+) -> None:
+    deleted = await watchlist_svc.remove(db, user, title_id=title_id, profile=profile)
     if deleted == 0:
         raise HTTPException(
             404,
@@ -217,8 +251,10 @@ async def remove_from_watchlist(title_id: int, db: DbSession, user: CurrentUser)
 
 
 @router.get("/me/list", response_model=WatchlistRead, tags=["watchlist"])
-async def list_watchlist(db: DbSession, user: CurrentUser) -> WatchlistRead:
-    items = await watchlist_svc.list_(db, user)
+async def list_watchlist(
+    db: DbSession, user: CurrentUser, profile: ActiveProfile
+) -> WatchlistRead:
+    items = await watchlist_svc.list_(db, user, profile=profile)
     return WatchlistRead(
         items=[
             WatchlistItemRead(title=TitleSummary.model_validate(t), added_at=w.added_at)
@@ -231,14 +267,16 @@ async def list_watchlist(db: DbSession, user: CurrentUser) -> WatchlistRead:
 
 
 @router.get("/me/recommendations", response_model=list[TitleSummary], tags=["recommendations"])
-async def my_recommendations(db: DbSession, user: CurrentUser) -> list[TitleSummary]:
+async def my_recommendations(
+    db: DbSession, user: CurrentUser, profile: ActiveProfile
+) -> list[TitleSummary]:
     """Recommendation row independent of /v1/home.
 
     Same source as the 'Recommended for You' row on home — seeded by reactions,
     watchlist, and watch progress. Returns an empty list for users with no
     signal yet.
     """
-    titles = await browse_svc.recommended_for_you(db, user)
+    titles = await browse_svc.recommended_for_you(db, user, profile=profile)
     return [TitleSummary.model_validate(t) for t in titles]
 
 

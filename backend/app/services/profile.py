@@ -6,8 +6,16 @@ Invariants:
   - Primary profile can be renamed/avatar-changed but never deleted.
   - Profile names are unique within a single user account (the DB enforces
     this via uq_profile_user_name).
+
+This module also owns the cross-cutting profile-scoping helpers:
+  - profile_scope()         — the (user_id, profile_id) WHERE clause builder
+  - KID_SAFE_RATINGS / is_kid_safe() — the kids-content policy
+  - set/get_request_profile — request-scoped active profile (ContextVar)
 """
 from __future__ import annotations
+
+from contextvars import ContextVar
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +25,47 @@ from app.models.profile import Profile
 # Netflix's UI maxes at 5 profiles per Standard/Premium plan. We use 4 because
 # it's the historical max and fits the Netflix-style 2×2 picker grid cleanly.
 MAX_PROFILES_PER_USER = 4
+
+# CBFC ratings in the catalog are U, U/A, A (plus 12+/16+/18+ per
+# docs/db-schema.md). A "kid" profile may only see/play "U" — U/A means
+# parental guidance, so it is NOT kid-safe. Titles with no rating at all are
+# treated as NOT kid-safe: fail closed rather than show unrated content to kids.
+KID_SAFE_RATINGS: frozenset[str] = frozenset({"U"})
+
+
+def is_kid_safe(age_rating: str | None) -> bool:
+    return age_rating in KID_SAFE_RATINGS
+
+
+def profile_scope(profile_id_column: Any, profile: Profile | None):
+    """WHERE clause scoping a per-user table to the active profile.
+
+    NULL profile_id rows are the legacy / no-profile scope — they are matched
+    ONLY when no profile is active. With a profile active, only that profile's
+    rows match. This keeps pre-profiles data reachable (send no header) while
+    giving each profile a fully separate history/list/reactions.
+    """
+    if profile is None:
+        return profile_id_column.is_(None)
+    return profile_id_column == profile.id
+
+
+# Request-scoped active profile. The auth dependencies in app/api/deps.py
+# stash the verified profile here on every authenticated request. This exists
+# for ONE consumer: the playback service. The /play routes (titles.py /
+# episodes.py) belong to another finished branch, so we can't add an
+# ActiveProfile parameter to their signatures — instead playback reads the
+# stash. Services that CAN receive the profile via normal plumbing (history,
+# watchlist, reactions, browse) take it as an explicit argument.
+_request_profile: ContextVar[Profile | None] = ContextVar("active_profile", default=None)
+
+
+def set_request_profile(profile: Profile | None) -> None:
+    _request_profile.set(profile)
+
+
+def get_request_profile() -> Profile | None:
+    return _request_profile.get()
 
 
 class ProfileLimitReached(Exception):

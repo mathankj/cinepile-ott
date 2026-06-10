@@ -2,11 +2,12 @@
  * Active-profile store. Persists the currently selected profile in localStorage
  * so the picker only fires once per device. Cleared on logout (via auth store).
  *
- * NB: the backend doesn't yet scope reactions / continue-watching by profile —
- * that's a follow-up. Today the active profile is mostly cosmetic (drives the
- * avatar shown in the navbar). When backend scoping lands, every API call
- * will get a `?profile_id=<id>` query param automatically via the axios
- * interceptor.
+ * The active profile is REAL scoping, not cosmetic: an axios request
+ * interceptor in api/client.ts sends `X-Profile-Id: <id>` on every call, and
+ * the backend scopes watchlist / progress / reactions / home rows to it (and
+ * enforces U-rated-only playback for kid profiles). The header is verified
+ * server-side against the logged-in user, so a stale persisted value is
+ * harmlessly ignored rather than leaking another account's data.
  */
 import { create } from "zustand";
 import { persist } from "zustand/middleware";

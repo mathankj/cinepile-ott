@@ -4,6 +4,7 @@ Reusable FastAPI dependencies.
 - get_db        : per-request AsyncSession
 - get_current_user / get_current_user_optional : decodes Bearer JWT, loads user
 - require_admin : role gate
+- get_active_profile : resolves the X-Profile-Id header to a verified Profile
 """
 from __future__ import annotations
 
@@ -15,7 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenError, decode_token
 from app.db.session import get_db as _get_db
+from app.models.profile import Profile
 from app.models.user import User
+from app.services.profile import set_request_profile
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
@@ -73,21 +76,68 @@ async def _user_from_bearer(authorization: str | None, db: AsyncSession) -> User
     return user
 
 
+async def _resolve_active_profile(
+    db: AsyncSession, user: User | None, x_profile_id: str | None
+) -> Profile | None:
+    """Maps the X-Profile-Id header to a Profile — or None.
+
+    The header is client-supplied, so it is NEVER trusted on its own: a profile
+    is only returned when it exists AND belongs to the authenticated user.
+    Anything else (no header, garbage value, someone else's profile id) quietly
+    degrades to None — i.e. the legacy "no profile" scope — rather than erroring,
+    so stale localStorage on the frontend can't lock a user out.
+    """
+    if user is None or not x_profile_id:
+        return None
+    try:
+        profile_id = int(x_profile_id)
+    except (TypeError, ValueError):
+        return None
+    profile = await db.get(Profile, profile_id)
+    if profile is None or profile.user_id != user.id:
+        return None
+    return profile
+
+
 async def get_current_user(
     db: DbSession,
     authorization: str | None = Header(default=None),
+    x_profile_id: str | None = Header(default=None, alias="X-Profile-Id"),
 ) -> User:
     user = await _user_from_bearer(authorization, db)
     if user is None:
         raise _unauthorized()
+    # Stash the verified active profile in a request-scoped ContextVar. Routes
+    # we own take ActiveProfile explicitly; the /play routes (other branch)
+    # can't — the playback service reads this stash instead. See
+    # app/services/profile.py for the rationale.
+    set_request_profile(await _resolve_active_profile(db, user, x_profile_id))
     return user
 
 
 async def get_current_user_optional(
     db: DbSession,
     authorization: str | None = Header(default=None),
+    x_profile_id: str | None = Header(default=None, alias="X-Profile-Id"),
 ) -> User | None:
-    return await _user_from_bearer(authorization, db)
+    user = await _user_from_bearer(authorization, db)
+    set_request_profile(await _resolve_active_profile(db, user, x_profile_id))
+    return user
+
+
+async def get_active_profile(
+    db: DbSession,
+    authorization: str | None = Header(default=None),
+    x_profile_id: str | None = Header(default=None, alias="X-Profile-Id"),
+) -> Profile | None:
+    """Explicit dependency form of the active profile, for routes we own.
+
+    Self-contained (re-reads the bearer + header) so it works regardless of
+    whether the route also depends on get_current_user — the duplicate
+    db.get() calls hit the session identity map, not the database.
+    """
+    user = await _user_from_bearer(authorization, db)
+    return await _resolve_active_profile(db, user, x_profile_id)
 
 
 async def require_admin(user: Annotated[User, Depends(get_current_user)]) -> User:
@@ -105,5 +155,6 @@ async def require_content_role(user: Annotated[User, Depends(get_current_user)])
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
 CurrentUserOptional = Annotated[User | None, Depends(get_current_user_optional)]
+ActiveProfile = Annotated[Profile | None, Depends(get_active_profile)]
 AdminUser = Annotated[User, Depends(require_admin)]
 ContentRoleUser = Annotated[User, Depends(require_content_role)]

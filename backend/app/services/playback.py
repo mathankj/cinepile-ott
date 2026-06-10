@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from fastapi import HTTPException
 from jose import jwt
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,11 +20,13 @@ from sqlalchemy import select
 from app.core.config import get_settings
 from app.models.episode import Episode
 from app.models.language import SubtitleTrack
+from app.models.profile import Profile
 from app.models.season import Season
 from app.models.title import Title
 from app.models.user import User
 from app.services import storage as storage_svc
 from app.services.billing import has_active_subscription
+from app.services.profile import get_request_profile, is_kid_safe, profile_scope
 
 
 # Manifest TTL is intentionally short — a leaked URL is only useful for the
@@ -42,6 +45,44 @@ class NotEntitled(Exception):
 class NoPlayableAsset(Exception):
     code = "no_playable_asset"
     message = "This title or episode has no playable asset configured."
+
+
+class KidProfileRestricted(HTTPException):
+    """403 when a kid profile requests playback of non-U content.
+
+    Deliberately subclasses HTTPException (unlike the service errors above):
+    the /play routes live in titles.py / episodes.py, which were finished on
+    another branch and only translate NotEntitled / NoPlayableAsset — a plain
+    exception would surface as a 500 there. FastAPI handles HTTPException
+    wherever it is raised, so this reaches the client as a proper 403 with the
+    project's standard error envelope without touching those route files.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=403,
+            detail={
+                "error": {
+                    "code": "kid_profile_restricted",
+                    "message": "This title isn't available on a kids profile.",
+                }
+            },
+        )
+
+
+def _ensure_kid_allowed(title: Title | None) -> None:
+    """Kids-content gate, applied before any ticket is minted.
+
+    The active profile arrives via the request-scoped stash set by the auth
+    dependency (see app/services/profile.py for why it isn't a parameter).
+    Kid-safe means title.age_rating == "U"; a missing parent title or missing
+    rating fails CLOSED — when in doubt, a kid profile gets nothing.
+    """
+    profile = get_request_profile()
+    if profile is None or profile.kind != "kid":
+        return
+    if title is None or not is_kid_safe(title.age_rating):
+        raise KidProfileRestricted()
 
 
 def _build_token(user_id: int, ref_type: str, ref_id: int, url: str, expires_at: datetime) -> str:
@@ -164,15 +205,23 @@ async def _ensure_entitled(
 
 
 async def _lookup_resume(
-    db: AsyncSession, user_id: int, title_id: int, episode_id: int | None
+    db: AsyncSession,
+    user_id: int,
+    title_id: int,
+    episode_id: int | None,
+    profile: Profile | None = None,
 ) -> tuple[int | None, int | None]:
-    """Returns (position_sec, total_sec) for a user's prior progress, if any.
-    None when this is the user's first time playing this content."""
+    """Returns (position_sec, total_sec) for the active profile's prior progress,
+    if any. None when this profile hasn't played this content before."""
     from sqlalchemy import and_, select as _select
 
     from app.models.watch_progress import WatchProgress
 
-    where = [WatchProgress.user_id == user_id, WatchProgress.title_id == title_id]
+    where = [
+        WatchProgress.user_id == user_id,
+        profile_scope(WatchProgress.profile_id, profile),
+        WatchProgress.title_id == title_id,
+    ]
     if episode_id is None:
         where.append(WatchProgress.episode_id.is_(None))
     else:
@@ -184,6 +233,9 @@ async def _lookup_resume(
 
 
 async def issue_movie_ticket(db: AsyncSession, user: User, title: Title) -> dict:
+    # Kid gate first — a kid profile shouldn't even learn whether a blocked
+    # title would have needed a subscription.
+    _ensure_kid_allowed(title)
     await _ensure_entitled(db, user, title=title)
     manifest = next((a for a in title.assets if a.kind == "hls_manifest"), None)
     if manifest is None:
@@ -198,7 +250,9 @@ async def issue_movie_ticket(db: AsyncSession, user: User, title: Title) -> dict
     await db.execute(update(Title).where(Title.id == title.id).values(view_count=Title.view_count + 1))
 
     # Resume hint — saves the frontend a round trip to /me/continue-watching
-    resume_at, stored_total = await _lookup_resume(db, user.id, title.id, None)
+    resume_at, stored_total = await _lookup_resume(
+        db, user.id, title.id, None, profile=get_request_profile()
+    )
     total_sec = stored_total or (title.runtime_minutes * 60 if title.runtime_minutes else None)
 
     return {
@@ -218,6 +272,9 @@ async def issue_episode_ticket(db: AsyncSession, user: User, episode: Episode) -
     # Episode free overrides; otherwise check parent series's is_free; otherwise need sub.
     season = await db.get(Season, episode.season_id)
     parent_title = await db.get(Title, season.title_id) if season else None
+    # Kid gate first (episodes inherit the parent series' age_rating); see
+    # issue_movie_ticket for why this precedes the entitlement check.
+    _ensure_kid_allowed(parent_title)
     await _ensure_entitled(db, user, title=parent_title, episode=episode)
     manifest = next((a for a in episode.assets if a.kind == "hls_manifest"), None)
     if manifest is None:
@@ -231,9 +288,11 @@ async def issue_episode_ticket(db: AsyncSession, user: User, episode: Episode) -
             update(Title).where(Title.id == season.title_id).values(view_count=Title.view_count + 1)
         )
 
-    # Resume + total — keyed on (user, title, episode)
+    # Resume + total — keyed on (user, profile, title, episode)
     parent_title_id = season.title_id if season else 0
-    resume_at, stored_total = await _lookup_resume(db, user.id, parent_title_id, episode.id)
+    resume_at, stored_total = await _lookup_resume(
+        db, user.id, parent_title_id, episode.id, profile=get_request_profile()
+    )
     total_sec = stored_total or episode.runtime_seconds
 
     return {
