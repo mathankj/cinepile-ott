@@ -1,0 +1,29 @@
+# CinePile OTT — two-container deployment.
+#
+# Designed for a shared VPS: the ONLY host resource this stack claims is TCP
+# port 8090 (change `ports` below if that ever conflicts). It does not touch
+# the host nginx, systemd units, or any other application on the machine.
+#
+#   docker compose up -d --build      # build + start (or update after git pull)
+#   docker compose logs -f api        # backend logs
+#   docker compose down               # stop (containers only — host untouched)
+#
+# The database is Neon (cloud Postgres) — no DB container, nothing stateful
+# on this host except the images themselves.
+name: cinepile
+
+services:
+  api:
+    build: ./backend
+    env_file: ./backend/.env   # production env — copied to the server at deploy, never committed
+    restart: unless-stopped
+    expose:
+      - "8000"                 # compose-network only; not published on the host
+
+  web:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "8090:80"              # the single public port of this whole stack
