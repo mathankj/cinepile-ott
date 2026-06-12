@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Crown } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { catalog, playback, progress } from "../api";
 import type { SeasonDetail } from "../api/types";
@@ -137,24 +137,56 @@ export default function Watch() {
 
   const src = isTrailer ? trailer?.trailer_url : ticket?.manifest_url;
   if (error || trailerError || !src) {
-    const msg =
-      (error as { response?: { status?: number; data?: { detail?: { error?: { code?: string; message?: string } } } } } | undefined)
-        ?.response?.data?.detail?.error?.message ??
-      (isTrailer ? t("watch.trailer_error") : t("watch.playback_error"));
     const code = (error as { response?: { status?: number } } | undefined)?.response?.status;
-    return (
-      <div className="grid h-screen place-items-center bg-black px-4 text-center">
-        <div>
-          <p className="text-xl">{msg}</p>
-          {code === 402 && (
+
+    // 402 → a proper paywall, not a bare error line. The viewer did nothing
+    // wrong; this screen is a sales surface, so it gets the brand treatment.
+    if (code === 402) {
+      return (
+        <div className="relative grid h-screen place-items-center overflow-hidden bg-black px-4 text-center">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background:
+                "radial-gradient(ellipse 80% 60% at 50% 30%, color-mix(in srgb, var(--color-brand) 22%, transparent), transparent 70%)",
+            }}
+          />
+          <div className="relative max-w-md animate-fade-in">
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full border border-white/15 bg-white/5 backdrop-blur-sm">
+              <Crown size={28} className="text-[var(--color-brand)]" />
+            </div>
+            <h1 className="mt-6 text-2xl font-bold text-white md:text-3xl">
+              {t("watch.paywall_title")}
+            </h1>
+            <p className="mt-3 text-base text-white/70">{t("watch.paywall_body")}</p>
             <button
               type="button"
-              className="btn-primary mt-6"
+              className="btn-primary mt-8 w-full py-3 text-base"
               onClick={() => nav("/subscribe")}
             >
               {t("watch.view_plans")}
             </button>
-          )}
+            <button
+              type="button"
+              className="mt-4 block w-full text-sm text-white/60 hover:text-white"
+              onClick={() => nav(-1)}
+            >
+              {t("watch.go_back")}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    const msg =
+      (error as { response?: { status?: number; data?: { detail?: { error?: { code?: string; message?: string } } } } } | undefined)
+        ?.response?.data?.detail?.error?.message ??
+      (isTrailer ? t("watch.trailer_error") : t("watch.playback_error"));
+    return (
+      <div className="grid h-screen place-items-center bg-black px-4 text-center">
+        <div>
+          <p className="text-xl">{msg}</p>
           <button
             type="button"
             className="mt-4 block w-full text-sm text-white/60 hover:text-white"

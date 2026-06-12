@@ -1,10 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
-import { Play, Plus, Check, ThumbsUp, ThumbsDown, Heart } from "lucide-react";
+import { Play, Plus, Check, ThumbsUp, ThumbsDown, Heart, Crown } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { catalog, me } from "../api";
 import { TitleRow } from "../components/title/TitleRow";
 import { useAuthStore } from "../stores/auth";
+import { useSubscription } from "../hooks/useSubscription";
 
 export default function TitleDetail() {
   const { t } = useTranslation();
@@ -60,6 +61,15 @@ export default function TitleDetail() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["reactions"] }),
   });
 
+  // Known non-subscriber on paid content → say so up front with a Subscribe
+  // CTA instead of letting them click Play and wait for the server's 402.
+  // While the subscription check is in flight (isResolved=false) we show the
+  // normal Play button — the Watch page paywall still backstops it. Series
+  // keep Play S1E1 (season browsing is free; the paywall sits on episode play).
+  const { isSubscriber, isResolved } = useSubscription();
+  const needsSubscription =
+    !!title && !title.is_free && isLoggedIn && isResolved && !isSubscriber;
+
   if (isLoading) return <TitleDetailSkeleton />;
   if (!title) return <div className="p-8 text-white/60">{t("title_detail.not_found")}</div>;
 
@@ -102,12 +112,21 @@ export default function TitleDetail() {
         {/* CTAs */}
         <div className="mt-6 flex flex-wrap gap-3">
           {title.type === "movie" ? (
-            <Link
-              to={`/watch/title/${title.id}`}
-              className="inline-flex items-center gap-2 rounded bg-white px-7 py-3 font-semibold text-black hover:bg-white/85"
-            >
-              <Play size={18} className="fill-current" /> {t("title_detail.play")}
-            </Link>
+            needsSubscription ? (
+              <Link
+                to="/subscribe"
+                className="inline-flex items-center gap-2 rounded bg-[var(--color-brand)] px-7 py-3 font-semibold text-white hover:brightness-110"
+              >
+                <Crown size={18} /> {t("title_detail.subscribe_to_watch")}
+              </Link>
+            ) : (
+              <Link
+                to={`/watch/title/${title.id}`}
+                className="inline-flex items-center gap-2 rounded bg-white px-7 py-3 font-semibold text-black hover:bg-white/85"
+              >
+                <Play size={18} className="fill-current" /> {t("title_detail.play")}
+              </Link>
+            )
           ) : (
             <Link
               to={`/title/${title.id}/season/1`}

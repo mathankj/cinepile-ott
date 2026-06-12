@@ -94,6 +94,7 @@
   "title_detail": {
     "play": "Play",
     "play_s1e1": "Play S1E1",
+    "subscribe_to_watch": "Subscribe to Watch",
     "add_to_list": "Add to My List",
     "remove_from_list": "Remove from My List",
     "watch_trailer": "Watch Trailer",
@@ -118,6 +119,8 @@
   "watch": {
     "trailer_error": "Couldn't load the trailer.",
     "playback_error": "Couldn't start playback.",
+    "paywall_title": "Subscribe to watch this title",
+    "paywall_body": "This title is part of the premium catalog. Pick a plan and start watching in seconds - cancel anytime.",
     "view_plans": "View Plans",
     "go_back": "Go back",
     "next_episode_in": "Next episode in {{seconds}}…",

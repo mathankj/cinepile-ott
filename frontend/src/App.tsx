@@ -10,7 +10,15 @@ const queryClient = new QueryClient({
       gcTime: 30 * 60_000,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
-      retry: 1,
+      // 4xx responses are FINAL — a 402 paywall or 404 won't change on retry,
+      // and retrying doubles the wait before the user sees the real answer
+      // (most visible on Play → "subscription required"). Only retry once on
+      // network failures / 5xx, where a second attempt can actually help.
+      retry: (failureCount, error) => {
+        const status = (error as { response?: { status?: number } })?.response?.status;
+        if (status !== undefined && status >= 400 && status < 500) return false;
+        return failureCount < 1;
+      },
     },
   },
 });

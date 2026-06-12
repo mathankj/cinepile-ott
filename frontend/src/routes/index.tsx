@@ -64,6 +64,43 @@ function lazyRoute(Component: React.LazyExoticComponent<React.ComponentType>) {
 }
 
 /**
+ * Warm the chunks a viewer is likely to hit next, AFTER the current page has
+ * painted. Code-splitting keeps the first paint small, but without this every
+ * navbar click pays a chunk download right when the user is waiting — the
+ * "navigation shows loading for a long time" complaint. Idle-prefetching keeps
+ * both: tiny first load, instant subsequent navigation. Admin chunks are
+ * deliberately excluded — regular viewers never need them.
+ */
+const HOT_ROUTES = [
+  () => import("../pages/Home"),
+  () => import("../pages/Browse"),
+  () => import("../pages/Search"),
+  () => import("../pages/TitleDetail"),
+  () => import("../pages/Season"),
+  () => import("../pages/Watch"), // pulls the hls.js vendor chunk too — the big one
+  () => import("../pages/MyList"),
+  () => import("../pages/History"),
+  () => import("../pages/Subscribe"),
+  () => import("../pages/Account"),
+  () => import("../pages/Profiles"),
+];
+
+function PrefetchHotRoutes() {
+  useEffect(() => {
+    // requestIdleCallback waits for a quiet moment; Safari lacks it, so fall
+    // back to a timer long enough for the first page's own work to finish.
+    const start = () => HOT_ROUTES.forEach((load) => void load());
+    if ("requestIdleCallback" in window) {
+      const handle = window.requestIdleCallback(start, { timeout: 4000 });
+      return () => window.cancelIdleCallback(handle);
+    }
+    const timer = setTimeout(start, 2500);
+    return () => clearTimeout(timer);
+  }, []);
+  return null;
+}
+
+/**
  * Wraps a route so that authed users without an active profile are bounced to
  * /profiles first. Anonymous users pass through (they hit the existing
  * ProtectedRoute / login redirect). Once a profile is picked, the active row
@@ -186,5 +223,10 @@ const router = createBrowserRouter([
 ]);
 
 export function AppRouter() {
-  return <RouterProvider router={router} />;
+  return (
+    <>
+      <PrefetchHotRoutes />
+      <RouterProvider router={router} />
+    </>
+  );
 }
