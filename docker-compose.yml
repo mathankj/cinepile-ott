@@ -19,6 +19,11 @@ services:
     restart: unless-stopped
     expose:
       - "8000"                 # compose-network only; not published on the host
+    # Hard caps so a demo spike can never starve the kotak trading apps that
+    # share this VPS. The api idles at ~260 MB with 2 workers; 768 MB leaves
+    # generous headroom. cpus caps burst, not steady use.
+    mem_limit: 768m
+    cpus: 1.0
 
   web:
     build: ./frontend
@@ -27,3 +32,5 @@ services:
       - api
     ports:
       - "8090:80"              # the single public port of this whole stack
+    mem_limit: 128m            # nginx serving static files idles at ~6 MB
+    cpus: 0.5
