@@ -39,8 +39,10 @@ PUBLIC_PORT = 8090
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = REPO_ROOT / "deploy" / ".env.production"
 
-# Services that must NOT be disturbed. Checked before and after.
-PROTECTED_SERVICES = ["kotak.service", "kotak-reverse.service"]
+# Services that must NOT be disturbed. Checked before and after. These are the
+# two stock apps actually running on the box (verified 2026-06-12): the main
+# Kotak dashboard (gunicorn :5000) and the trading-decision preview (:5001).
+PROTECTED_SERVICES = ["kotak.service", "kotak-trading-decision.service"]
 
 
 def run_remote(client: paramiko.SSHClient, cmd: str, *, check: bool = True, quiet: bool = False) -> str:
