@@ -126,7 +126,7 @@ export default function Watch() {
     // Full-bleed black surface — no white flash, no layout shift when the
     // player takes over the same screen area.
     return (
-      <div className="grid h-screen place-items-center bg-black">
+      <div data-testid="watch-loading" className="grid h-screen place-items-center bg-black">
         <div
           className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-[var(--color-brand)]"
           aria-label={t("common.loading")}

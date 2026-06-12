@@ -4,7 +4,7 @@
 
 **How to read this:** every row is one feature. Status column tells you whether it exists in code today (✅), is partial (⚠️), or is planned (📋). The Phase column tells you which release it ships in. When showing Phase 1 to the client, hide / disable everything marked Phase 2 or Phase 3.
 
-**Last updated:** 2026-06-04
+**Last updated:** 2026-06-10
 
 ---
 
@@ -16,7 +16,7 @@ The minimum viable streaming product. Everything here works today; nothing addit
 | 1.1 | Email + password signup | Auth | ✅ | Floating-label form, RFC 6761 reserved-TLD error mapping |
 | 1.2 | Email + password sign-in | Auth | ✅ | JWT access + refresh tokens, axios auto-refresh on 401 |
 | 1.3 | Logout (single-device) | Auth | ✅ | Clears tokens + profile from localStorage |
-| 1.4 | Profile picker ("Who's watching?") | UX | ✅ | 4 profiles per account, avatar emojis, kid flag (no enforcement yet) |
+| 1.4 | Profile picker ("Who's watching?") | UX | ✅ | 4 profiles per account, avatar emojis, kid flag (enforced since 2026-06-10 — see 2.11/2.12) |
 | 1.5 | Profile create / edit / delete | UX | ✅ | Modal with avatar grid, primary can't be deleted |
 | 1.6 | Home page billboard (hero) | UX | ✅ | Backdrop image, Play + More Info CTAs, deterministic gradient fallback |
 | 1.7 | Continue Watching row | UX | ✅ | Updates within 60s of progress event |
@@ -30,7 +30,7 @@ The minimum viable streaming product. Everything here works today; nothing addit
 | 1.15 | Search with debounce + LIKE-escape | Discovery | ✅ | 2-char minimum, special-char safe |
 | 1.16 | Title detail page (movie + series) | Discovery | ✅ | Synopsis, cast, genres, episodes, age rating, runtime |
 | 1.17 | Season + episode list with Play S1E1 | Discovery | ✅ | Per-season episodes, runtime, intro markers |
-| 1.18 | Trailer (Watch Trailer button) | Discovery | ✅ | `trailer_url` per title |
+| 1.18 | Trailer (Watch Trailer button) | Discovery | ✅ | `trailer_url` per title; plays in-app (`/watch/trailer/:id`) since 2026-06-10 |
 | 1.19 | HLS video playback (Chrome/Firefox/Edge/Safari) | Player | ✅ | hls.js + native fallback |
 | 1.20 | Adaptive bitrate (auto quality switch) | Player | ✅ | hls.js default ABR |
 | 1.21 | Manual quality picker (Auto / 1080p / 720p / 480p) | Player | ✅ | Settings gear top-right |
@@ -44,7 +44,7 @@ The minimum viable streaming product. Everything here works today; nothing addit
 | 1.29 | 402 gating on paid content | Billing | ✅ | View Plans CTA appears |
 | 1.30 | Cancel subscription | Billing | ✅ | Cancel-at-period-end |
 | 1.31 | Reactions (thumbs up / down / double-up) | Social | ✅ | Three-state per title per user |
-| 1.32 | Multi-language UI (English / Hindi / Tamil) | i18n | ✅ | Navbar globe picker, persisted to localStorage |
+| 1.32 | Multi-language UI (English / Hindi / Tamil) | i18n | ✅ | Navbar globe picker, persisted to localStorage. Full coverage incl. player since 2026-06-10 (187 keys ×3 locales, up from 94) |
 | 1.33 | Responsive layout (360 / 414 / 768 / 1280 / 1920) | UX | ✅ | Tablet hamburger at <1024 |
 | 1.34 | Hover-reveal card overlay (Play / + / Info) | UX | ✅ | Desktop only; touch-suppressed |
 | 1.35 | Keyboard accessibility on cards | UX | ✅ | Tab + focus-within ring |
@@ -54,12 +54,14 @@ The minimum viable streaming product. Everything here works today; nothing addit
 | 1.39 | Admin: upload video (.mp4 to B2) | Admin | ✅ | Magic-byte sniff, 1 GB cap |
 | 1.40 | Admin: upload subtitle (.vtt per language) | Admin | ✅ | Upsert per language, 5 MB cap |
 | 1.41 | Admin: publish / schedule / archive | Admin | ✅ | Status workflow |
-| 1.42 | Admin: soft-delete with restore | Admin | ✅ | `deleted_at` column |
+| 1.42 | Admin: soft-delete with restore | Admin | ✅ | Restore endpoint + admin "Deleted" tab with one-click restore since 2026-06-10; restores to archived |
 | 1.43 | Admin: audit log (who did what when) | Admin | ✅ | Filterable by entity / actor |
 | 1.44 | Admin: role management (admin → cm → user) | Admin | ✅ | Admin-only |
 | 1.45 | Role × route access matrix (4 personas × 14 routes) | QA | ✅ | 56 access checks all passing |
-| 1.46 | Backend test coverage | QA | ✅ | 144/144 passing |
+| 1.46 | Backend test coverage | QA | ✅ | 224 tests (was 144; security + profiles + admin-features suites added 2026-06-10) |
 | 1.47 | E2E test coverage | QA | ✅ | 108/108 desktop passing |
+| 1.48 | "More Like This" row on title detail | Discovery | ✅ | Added 2026-06-10 — shared-genre similar titles, most-watched first |
+| 1.49 | Auth hardening (rate limiting, security headers, payment capture verification) | Security | ✅ | Added 2026-06-10 — login/signup rate limits, security headers + gzip, Razorpay capture + amount check, webhook strictness |
 
 ---
 
@@ -75,11 +77,11 @@ Features that drive engagement and reduce churn. Each requires either eng effort
 | 2.5 | Trailer auto-play on title detail (muted, 30s) | UX | 📋 | 0.5 day | None |
 | 2.6 | Top 10 in India row (daily-refreshed) | Discovery | 📋 | 0.5 day | None |
 | 2.7 | Manual quality cap toggle ("Use less data") | Player | 📋 | 0.5 day | None |
-| 2.8 | Skip-Recap overlay (like Skip-Intro) | Player | 📋 | 0.5 day | None |
-| 2.9 | Next-Episode auto-advance | Player | 📋 | 1 day | None |
+| 2.8 | Skip-Recap overlay (like Skip-Intro) | Player | ✅ | Shipped 2026-06-10 | None |
+| 2.9 | Next-Episode auto-advance | Player | ✅ | Shipped 2026-06-10 (10 s countdown) | None |
 | 2.10 | Watch Again row (completed titles) | Discovery | 📋 | 0.5 day | None |
-| 2.11 | Profile-scoped continue-watching / watchlist / reactions | UX | 📋 | 2 days (schema change) | None |
-| 2.12 | Kid mode content filter (U-rated only) | UX | 📋 | 1 day | None |
+| 2.11 | Profile-scoped continue-watching / watchlist / reactions | UX | ✅ | Shipped 2026-06-10 (schema migration + `X-Profile-Id`) | None |
+| 2.12 | Kid mode content filter (U-rated only) | UX | ✅ | Shipped 2026-06-10 (home rows + playback block; browse/search filter pending) | None |
 | 2.13 | Profile PIN / lock | Auth | 📋 | 1 day | None |
 | 2.14 | Password reset via email | Auth | 📋 | 1 day | Mailgun free tier OK |
 | 2.15 | Email verification on signup | Auth | 📋 | 0.5 day | Mailgun free tier OK |
@@ -91,7 +93,7 @@ Features that drive engagement and reduce churn. Each requires either eng effort
 | 2.21 | Search-result highlighting | Discovery | 📋 | 0.5 day | None |
 | 2.22 | Episode list keyboard navigation | A11y | 📋 | 1 day | None |
 | 2.23 | "Need help?" + help-centre stub pages | UX | 📋 | 1 day | None |
-| 2.24 | Account settings page (change email, password, delete account) | Auth | 📋 | 1 day | None |
+| 2.24 | Account settings page (change email, password, delete account) | Auth | ⚠️ | Account page + change-password shipped 2026-06-10; change-email + delete-account remain | None |
 | 2.25 | "My List" page filter + sort | UX | 📋 | 0.5 day | None |
 | 2.26 | Cast / Chromecast support | Player | 📋 | 1 day | None |
 | 2.27 | More languages: Telugu, Kannada, Malayalam, Bengali | i18n | 📋 | 1 day per | None |
@@ -157,9 +159,11 @@ These are commonly-asked but we recommend against — either Hotstar's moat, aga
 
 | Phase | Feature count | Eng days | Recurring $$ |
 |---|---|---|---|
-| **Phase 1** (launch / V1) | 47 features | 0 (already built) | ~₹3,100/mo infra |
-| **Phase 2** (growth) | 30 features | ~30 days | +₹8-12k/mo if DRM (2.18) |
+| **Phase 1** (launch / V1) | 49 features | 0 (already built) | ~₹3,100/mo infra |
+| **Phase 2** (growth) | 30 features (4 shipped early on 2026-06-10: 2.8, 2.9, 2.11, 2.12; 2.24 half-done) | ~24 days remaining | +₹8-12k/mo if DRM (2.18) |
 | **Phase 3** (scale) | 28 features | ~6 months | +₹15-150k/mo by traffic + add-ons |
+
+Still gated on external services / client sign-off (engineering cannot ship these alone): real DRM license-server contract (2.18/2.19), email provider for password reset + verification (2.14/2.15/2.17), Google/Apple OAuth credentials (2.16), and Razorpay business KYC for recurring Subscriptions mode.
 
 ---
 

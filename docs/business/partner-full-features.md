@@ -9,9 +9,9 @@ date: "2026-06-04"
 
 **Audience:** business partner (internal). Shows **every** feature in the platform — built, partial, planned, and intentionally out-of-scope. No filtering, no marketing copy. Engineering's honest snapshot.
 
-**Last updated:** 2026-06-04
+**Last updated:** 2026-06-10
 **Repo:** https://github.com/mathankj/cinepile-ott (private)
-**Code state:** backend 144/144 tests, e2e 108/108 tests, deployed locally for QA.
+**Code state:** backend 224 tests, e2e 108/108 tests (desktop), deployed locally for QA.
 
 ---
 
@@ -38,7 +38,7 @@ date: "2026-06-04"
 | 1.8 | Google social login | 📋 | Needs Google Cloud OAuth credentials |
 | 1.9 | Apple sign-in | 📋 | Needs Apple Developer membership |
 | 1.10 | Profile PIN / lock | 📋 | Backend column + UI |
-| 1.11 | Account settings (change email/password/delete account) | 📋 | DPDPA compliance |
+| 1.11 | Account settings (change email/password/delete account) | ⚠️ | Account page + change-password shipped 2026-06-10 (revokes other sessions); change-email + delete-account still pending (DPDPA) |
 | 1.12 | Cross-device session list / "log out everywhere" | 📋 | Refresh-token table query |
 | 1.13 | Two-factor (2FA) | ❌ | Out of V1; security overhead vs OTT user benefit is low |
 | 1.14 | Session token rotation on refresh | ✅ | Backend rotates refresh tokens automatically |
@@ -53,14 +53,14 @@ date: "2026-06-04"
 | 2.2 | Profile auto-create on signup | ✅ | First profile is the user's full name |
 | 2.3 | 4 profiles per account hard cap | ✅ | Matches Netflix Standard tier |
 | 2.4 | Avatar picker (emoji grid) | ✅ | 16 options; expandable |
-| 2.5 | Kid profile flag (adult/kid kind) | ✅ | Stored; enforcement pending |
+| 2.5 | Kid profile flag (adult/kid kind) | ✅ | Enforced since 2026-06-10 — see 2.11 |
 | 2.6 | Profile edit (name, avatar, kind) | ✅ | Modal with form |
 | 2.7 | Profile delete (non-primary only) | ✅ | Primary cannot be removed |
 | 2.8 | Active-profile persistence | ✅ | Zustand + localStorage with hydration handling |
 | 2.9 | Switch profile via navbar | ✅ | Dropdown in profile menu |
-| 2.10 | Profile-scoped continue-watching + watchlist + reactions | 📋 | Schema migration (add `profile_id`) |
-| 2.11 | Kid mode content filter (U-rated only) | 📋 | After 2.10 |
-| 2.12 | Profile PIN / lock | 📋 | After 2.10 |
+| 2.10 | Profile-scoped continue-watching + watchlist + reactions | ✅ | Shipped 2026-06-10 — `profile_id` migration, `X-Profile-Id` header, per-profile home rows; pre-profile data stays reachable |
+| 2.11 | Kid mode content filter (U-rated only) | ✅ | Shipped 2026-06-10 — U-rated-only home rows + hard server-side playback block (403). Known gap: browse/search not yet kid-filtered (playback always is) |
+| 2.12 | Profile PIN / lock | 📋 | Backend column + UI |
 | 2.13 | Profile transfer between users | ❌ | Not a real OTT feature |
 
 ---
@@ -81,6 +81,7 @@ date: "2026-06-04"
 | 3.10 | Genre rows from user's top genres | ✅ | Auto-derived from history |
 | 3.11 | Home page server-side cache (60s TTL) | ✅ | Per-user; auto-invalidated on writes |
 | 3.12 | Skeleton shimmer while loading | ✅ | Site-wide style class |
+| 3.18 | "More Like This" (similar titles) row on title detail | ✅ | Added 2026-06-10 — `GET /v1/titles/{id}/similar`, shared-genre, most-watched first |
 | 3.13 | Trailer auto-play on hover (Netflix-iconic mini-trailer) | 📋 | Phase 2 |
 | 3.14 | Top 10 in India daily-refreshed row | 📋 | Phase 2 |
 | 3.15 | Watch Again row (completed titles) | 📋 | Phase 2 |
@@ -115,7 +116,7 @@ date: "2026-06-04"
 | 5.1 | Title detail page (movie + series) | ✅ | Synopsis, cast, genres, age, runtime |
 | 5.2 | Play button (movies) / Play S1E1 (series) | ✅ | |
 | 5.3 | More Info / Add to My List buttons | ✅ | |
-| 5.4 | Watch Trailer button | ✅ | Backed by `trailer_url`; placeholder seeded |
+| 5.4 | Watch Trailer button | ✅ | Plays **in-app** (`/watch/trailer/:id`) since 2026-06-10; backed by `trailer_url` |
 | 5.5 | Three-state reaction (thumbs up/down/double-up) | ✅ | |
 | 5.6 | Episode list per season | ✅ | Per-season tabs |
 | 5.7 | Episode runtime + intro markers | ✅ | |
@@ -144,8 +145,8 @@ date: "2026-06-04"
 | 6.9 | Resume from last position | ✅ | Per-user, per-title |
 | 6.10 | Progress reporting (every 10s + on pause) | ✅ | |
 | 6.11 | Cosmetic anti-capture shield | ✅ | Right-click block, controlsList=nodownload, tab-hidden curtain |
-| 6.12 | Skip Recap overlay | 📋 | Phase 2 |
-| 6.13 | Next-Episode auto-advance with countdown | 📋 | Phase 2 |
+| 6.12 | Skip Recap overlay | ✅ | Shipped 2026-06-10 — episode `recap_start_sec`/`recap_end_sec` markers, editable in the admin Seasons editor |
+| 6.13 | Next-Episode auto-advance with countdown | ✅ | Shipped 2026-06-10 — 10 s countdown overlay, Cancel/Play Now |
 | 6.14 | Manual quality cap toggle ("Use less data") | 📋 | Phase 2 |
 | 6.15 | Picture-in-picture | 📋 | Phase 3 (currently disabled for anti-capture) |
 | 6.16 | Chromecast / Google Cast | 📋 | Phase 2 |
@@ -190,9 +191,9 @@ date: "2026-06-04"
 | 8.2 | Language picker in navbar (globe icon) | ✅ | |
 | 8.3 | LocalStorage persistence | ✅ | Survives reload |
 | 8.4 | Browser language auto-detect on first visit | ✅ | |
-| 8.5 | English UI | ✅ | |
-| 8.6 | Hindi UI | ✅ | |
-| 8.7 | Tamil UI | ✅ | |
+| 8.5 | English UI | ✅ | Full coverage incl. player — 187 keys (2026-06-10 sweep, up from 94) |
+| 8.6 | Hindi UI | ✅ | Full coverage, same 187 keys |
+| 8.7 | Tamil UI | ✅ | Full coverage, same 187 keys |
 | 8.8 | Telugu / Kannada / Malayalam / Bengali UI | 📋 | Phase 2 (add JSON files) |
 | 8.9 | Subtitle (.vtt) sidecar upload per language | ✅ | Admin endpoint |
 | 8.10 | In-manifest subtitle tracks | ✅ | Player auto-discovers |
@@ -213,16 +214,16 @@ date: "2026-06-04"
 | 9.4 | Create new title (movie or series) | ✅ | |
 | 9.5 | Edit title metadata (everything except slug after create) | ✅ | |
 | 9.6 | Publish / schedule / archive workflow | ✅ | |
-| 9.7 | Soft-delete with restore | ✅ | `deleted_at` column |
+| 9.7 | Soft-delete with restore | ✅ | Restore endpoint + admin "Deleted" tab with one-click restore shipped 2026-06-10 (before that only the `deleted_at` column existed — no way to restore). Restores to `archived`, never auto-publishes |
 | 9.8 | Video upload (multipart streamed to B2) | ✅ | 1 GB cap |
 | 9.9 | Magic-byte sniff (ISO BMFF / WebM / HLS validation) | ✅ | Defense against renamed EXE |
 | 9.10 | Subtitle (.vtt) upload per language | ✅ | 5 MB cap, upsert by language |
 | 9.11 | Subtitle remove (DB row only; object retained for undo) | ✅ | |
 | 9.12 | Audio track management UI | ⚠️ | Backend endpoint exists; admin UI not yet exposed |
-| 9.13 | Per-episode video upload | ✅ | |
-| 9.14 | Per-episode subtitle upload | ✅ | |
-| 9.15 | Season + episode create | ✅ | |
-| 9.16 | Genre management | ✅ | |
+| 9.13 | Per-episode video upload | ✅ | Admin UI (Seasons editor upload cards with progress bar) shipped 2026-06-10; endpoint existed before |
+| 9.14 | Per-episode subtitle upload | ✅ | Same — upload UI in the Seasons editor since 2026-06-10 |
+| 9.15 | Season + episode create | ✅ | Full Seasons/Episodes editor UI (metadata, skip markers, publish/delete) since 2026-06-10 |
+| 9.16 | Genre management | ✅ | Full CRUD since 2026-06-10 — dedicated admin Genres page, rename + delete (delete blocked while in use) |
 | 9.17 | Admin-scoped detail endpoint for drafts | ✅ | Fixes "editor blank for new title" bug |
 | 9.18 | User management (list, change role) | ✅ | Admin-only |
 | 9.19 | Audit log (who/what/when/before/after) | ✅ | Filterable |
@@ -308,15 +309,18 @@ date: "2026-06-04"
 | 14.9 | Webhook idempotency | ✅ | `webhook_events` table with seen-id check |
 | 14.10 | Health + readyz endpoints | ✅ | |
 | 14.11 | Razorpay client (Orders + Subscriptions modes) | ✅ | Subscriptions mode pending KYC |
-| 14.12 | Rate limiting | 📋 | Phase 2 (Redis-keyed) |
+| 14.12 | Rate limiting | ✅ | Shipped 2026-06-10 — login (10/min) + signup (5/min) per client IP, in-process sliding window. Redis-keyed swap needed when scaling past one worker |
 | 14.13 | Background job queue (Celery / RQ / Arq) | 📋 | Phase 3 |
 | 14.14 | Email service abstraction | 📋 | Phase 2 (Mailgun) |
-| 14.15 | DRM token signing service | ✅ | Code path; activated when provider configured |
-| 14.16 | Search service (Postgres full-text) | ✅ | |
+| 14.15 | DRM token signing service | ✅ | Code path; activated when provider configured. Fails closed if `DRM_TOKEN_SECRET` missing (never falls back to the app JWT secret) |
+| 14.16 | Search service | ✅ | **LIKE-based** (case-insensitive, wildcard-escaped, 100-char cap) — NOT Postgres full-text. tsvector upgrade planned when the catalog scales (see 14.17) |
 | 14.17 | Elasticsearch / Meilisearch (better search) | 📋 | Phase 3 |
 | 14.18 | CORS configured | ✅ | |
 | 14.19 | Request ID logging | ✅ | |
 | 14.20 | Structured logging (JSON) | ✅ | structlog |
+| 14.21 | Security headers (nosniff, X-Frame-Options DENY, Referrer-Policy, HSTS in prod) | ✅ | Added 2026-06-10 |
+| 14.22 | Gzip response compression | ✅ | Added 2026-06-10 — JSON >500 bytes |
+| 14.23 | Payment capture + amount verification before activating subs | ✅ | Added 2026-06-10 — signature alone no longer unlocks access |
 
 ---
 
@@ -324,7 +328,7 @@ date: "2026-06-04"
 
 | # | Feature | Status | Notes |
 |---|---|---|---|
-| 15.1 | Backend pytest suite (integration + unit) | ✅ | 144/144 passing |
+| 15.1 | Backend pytest suite (integration + unit) | ✅ | 224 tests (was 144) — security hardening, profile scoping, similar titles, admin features, query-efficiency suites added 2026-06-10 |
 | 15.2 | Backend load tests (Locust) | ⚠️ | Baseline recorded; not in CI |
 | 15.3 | Frontend Playwright e2e | ✅ | 108/108 desktop, 31/95 mobile (skips are by design) |
 | 15.4 | Role × route access matrix tests | ✅ | 56 access checks |
@@ -423,11 +427,13 @@ date: "2026-06-04"
 
 | Status | Count |
 |---|---|
-| ✅ Live | 104 features |
-| ⚠️ Partial | 6 features |
-| 📋 Planned | ~85 features |
+| ✅ Live | 113 features |
+| ⚠️ Partial | 7 features |
+| 📋 Planned | ~79 features |
 | ❌ Out of scope | 9 features |
-| **Total inventoried** | **~204 features** |
+| **Total inventoried** | **~208 features** |
+
+(2026-06-10 flips: profile scoping, kid filter, skip-recap, auto-advance, rate limiting → ✅; account settings 📋 → ⚠️; new rows for More Like This, security headers, gzip, payment capture check.)
 
 ---
 

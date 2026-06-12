@@ -99,8 +99,9 @@ test.describe("Card hover reveal (desktop only)", () => {
     const playBtn = firstCard.locator('button[aria-label="Play"]');
     await expect(playBtn).toBeVisible({ timeout: 5_000 });
 
-    await expect(firstCard.locator('button[aria-label="Add to my list"]')).toBeVisible();
-    await expect(firstCard.locator('button[aria-label="More info"]')).toBeVisible();
+    // Labels come from i18n (title_detail.add_to_list / billboard.more_info).
+    await expect(firstCard.locator('button[aria-label="Add to My List"]')).toBeVisible();
+    await expect(firstCard.locator('button[aria-label="More Info"]')).toBeVisible();
   });
 
   test("hover reveal disappears when mouse leaves", async ({ page }, testInfo) => {

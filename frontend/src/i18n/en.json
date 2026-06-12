@@ -209,5 +209,15 @@
     "cancel": "Cancel",
     "delete": "Delete",
     "kid_badge": "Kid"
+  },
+  "player": {
+    "settings": "Playback settings",
+    "quality": "Quality",
+    "auto": "Auto",
+    "audio": "Audio",
+    "subtitles": "Subtitles",
+    "off": "Off",
+    "skip_intro": "Skip Intro",
+    "skip_recap": "Skip Recap"
   }
 }

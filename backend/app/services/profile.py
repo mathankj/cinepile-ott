@@ -17,7 +17,7 @@ from __future__ import annotations
 from contextvars import ContextVar
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.profile import Profile
@@ -40,13 +40,16 @@ def is_kid_safe(age_rating: str | None) -> bool:
 def profile_scope(profile_id_column: Any, profile: Profile | None):
     """WHERE clause scoping a per-user table to the active profile.
 
-    NULL profile_id rows are the legacy / no-profile scope — they are matched
-    ONLY when no profile is active. With a profile active, only that profile's
-    rows match. This keeps pre-profiles data reachable (send no header) while
-    giving each profile a fully separate history/list/reactions.
+    NULL profile_id rows are the legacy / pre-profiles scope. They belong to
+    the account owner, so the PRIMARY profile sees them too — otherwise a
+    user's whole history would vanish the day profiles shipped. Secondary
+    profiles match only their own rows; no active profile (no header) matches
+    only the legacy scope.
     """
     if profile is None:
         return profile_id_column.is_(None)
+    if profile.is_primary:
+        return or_(profile_id_column == profile.id, profile_id_column.is_(None))
     return profile_id_column == profile.id
 
 

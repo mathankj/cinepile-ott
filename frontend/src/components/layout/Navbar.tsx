@@ -208,6 +208,7 @@ function LanguagePicker() {
         className="hover:text-white"
         aria-label={t("nav.language")}
         aria-expanded={open}
+        data-testid="language-picker"
       >
         <Globe size={20} />
       </button>

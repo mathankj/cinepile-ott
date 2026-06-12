@@ -52,13 +52,13 @@ test.describe("Loading states", () => {
       await route.continue();
     });
     await page.goto("/watch/title/1");
-    const spinner = page.locator('[aria-label="Loading"]').first();
-    await expect(spinner).toBeVisible({ timeout: 10_000 });
+    // Target the Watch page's own loading surface, not the route-level
+    // Suspense spinner that shows first while the lazy chunk loads.
+    const surface = page.getByTestId("watch-loading");
+    await expect(surface).toBeVisible({ timeout: 10_000 });
+    await expect(surface.locator("div.animate-spin")).toBeVisible();
     // The surface behind the spinner is black — no white flash.
-    const bg = await page.evaluate(() => {
-      const el = document.querySelector('[aria-label="Loading"]')?.parentElement;
-      return el ? window.getComputedStyle(el).backgroundColor : null;
-    });
+    const bg = await surface.evaluate((el) => window.getComputedStyle(el).backgroundColor);
     expect(bg).toBe("rgb(0, 0, 0)");
   });
 });

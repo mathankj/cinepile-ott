@@ -20,7 +20,7 @@ e2e or backend test that would fail if it broke.
 | Nav | Notifications icon | ⚠️ | UI only, no real notification system |
 | Nav | Profile menu with My List, History, Subscription, Sign out | ✅ | `auth.spec.ts` logout test |
 | Nav | Mobile hamburger drawer with all links | ✅ | `mobile.spec.ts` |
-| Nav | "Kids" profile mode | ❌ | Out of V1 scope — Profiles feature |
+| Nav | "Kids" profile mode | ✅ | Kid profiles (kind="kid") get U-rated-only home rows + a hard server-side playback block (403 `kid_profile_restricted`). Gap: catalog browse/search not yet kid-filtered — playback is the hard gate |
 | Nav | Search modal overlay (Netflix-style) instead of separate page | ❌ | We use /search route — equivalent UX |
 
 ## Home page
@@ -47,8 +47,8 @@ e2e or backend test that would fail if it broke.
 | Play / More info CTAs | ✅ | |
 | Synopsis + cast + genres | ✅ | `TitleDetail.tsx` |
 | Episode list for series with season tabs | ✅ | `Season.tsx`, `title-detail.spec.ts` |
-| Watch Trailer button (when configured) | ⚠️ | Wired but no seed title has `trailer_url` set; covered by an e2e that checks the **absence** of the button |
-| Similar titles row at bottom | ❌ | No recommendation engine yet |
+| Watch Trailer button (when configured) | ✅ | Plays **in-app** at `/watch/trailer/:id` (public endpoint, no ticket needed); returns to the title page when finished |
+| Similar titles row at bottom | ✅ | "More Like This" — `GET /v1/titles/{id}/similar`, shared-genre, view_count desc; backend tests in `test_similar_titles.py` |
 | Rating system (thumb up/down, two-thumbs) | ✅ | `me.setReaction()` |
 | Add to My List | ✅ | `me.addToList()` |
 
@@ -63,8 +63,8 @@ e2e or backend test that would fail if it broke.
 | Subtitle track switcher (Off / language) | ✅ | Settings gear |
 | Resume from last position | ✅ | `playback.resume_at_sec` |
 | Skip-intro overlay | ✅ | `VideoPlayer.tsx` |
-| Skip-recap overlay | ❌ | Episode model has `recap_*` fields but UI doesn't render |
-| Next-episode auto-advance | ⚠️ | Cue stored, but auto-advance not implemented |
+| Skip-recap overlay | ✅ | Renders from `recap_start_sec`/`recap_end_sec`; markers editable in the admin Seasons editor |
+| Next-episode auto-advance | ✅ | 10 s "Next episode in N…" countdown overlay with Cancel / Play Now; resolves the next episode across season boundaries |
 | Picture-in-picture | ❌ (intentionally disabled by anti-capture cosmetic) |
 | Download for offline | ❌ | Out of V1 — requires DRM |
 | Right-click / contextmenu block | ✅ | `Watch.tsx` |
@@ -101,7 +101,7 @@ e2e or backend test that would fail if it broke.
 | Free titles bypass subscription | ✅ | `is_free` flag |
 | Coupon / discount codes | ❌ | Out of V1 |
 | Family / shared accounts | ❌ | Out of V1 |
-| Multiple profiles per account | ❌ | Out of V1 |
+| Multiple profiles per account | ✅ | Real per-profile scoping (watchlist / progress / reactions / home rows) via `X-Profile-Id` header; 4 profiles per account, kid profiles enforced |
 
 ## Browse / search
 
@@ -165,13 +165,13 @@ e2e or backend test that would fail if it broke.
 | Hover-prefetch title detail | ✅ | `TitleCard.tsx` |
 | Image lazy-loading | ✅ | `loading="lazy"` |
 | HTTP cache headers on static | ⚠️ | Vite handles dev; prod nginx config needed |
-| HLS chunk pre-loading | ⚠️ | hls.js defaults; not tuned |
+| HLS chunk pre-loading | ✅ | Tuned 2026-06-10: `startFragPrefetch: true` + buffer limits; vendor-hls split into its own lazy chunk (entry bundle 522 KB → 33 KB) with hover-prefetch of the Watch chunk |
 
 ## Internationalisation
 
 | Pattern | Status | Notes |
 |---|---|---|
-| UI translation (i18n) | ✅ | i18next + EN/HI/TA, language picker in navbar (globe icon), persisted to localStorage. Adding a 4th language = drop a JSON file + register in `src/i18n/index.ts`. |
+| UI translation (i18n) | ✅ | i18next + EN/HI/TA, language picker in navbar (globe icon), persisted to localStorage. Full coverage incl. player since 2026-06-10 (187 keys ×3 locales). Adding a 4th language = drop a JSON file + register in `src/i18n/index.ts`. |
 | Multi-language metadata (title / synopsis) | ⚠️ | Backend has `original_language`; no localised strings table yet. Phase 2 if marketing needs Hindi/Tamil synopses. |
 | Per-region content filtering | ⚠️ | `/v1/home?country=IN` accepts param; not exposed in UI |
 | Subtitle / dub language picker (in-manifest) | ✅ | Player settings gear (hls.js audioTracks + subtitleTracks) |
@@ -181,15 +181,15 @@ e2e or backend test that would fail if it broke.
 
 These all need significant new work and most need ongoing $$:
 
-1. **Real DRM** — Widevine/PlayReady/FairPlay license server + encryption pipeline. Without this, content is technically copyable.
-2. **Profiles** — multiple Netflix-style avatars per account. Schema change + UI change + per-profile recommendations.
-3. **Recommendation engine** — collaborative filtering or ML-based rec rows. Needs data + a service.
+1. **Real DRM** — Widevine/PlayReady/FairPlay license server + encryption pipeline. Without this, content is technically copyable. (Token signing + EME scaffolding exist; needs a license-server contract.)
+2. ~~**Profiles**~~ — **DONE 2026-06-10**: per-profile watchlist/progress/reactions/home rows + kid enforcement.
+3. **Recommendation engine** — collaborative filtering or ML-based rec rows. Needs data + a service. (Genre-similarity "More Like This" + seeded rows exist; real ML does not.)
 4. **Downloads for offline** — requires DRM + client-side DRM session storage.
 5. **Live events / sports** — different infra entirely (low-latency HLS / LL-DASH).
 6. **Native mobile apps** — current product is web-only.
 7. **Password reset email** — needs SMTP / SES / Sendgrid wiring.
 8. **Social login** — Google / Apple / Facebook OAuth.
-9. **i18n** — translation pipeline for the UI.
+9. ~~**i18n**~~ — **DONE**: full EN/HI/TA coverage incl. player (187 keys ×3 locales as of 2026-06-10).
 
 If any of these are on the original client deliverable, flag them NOW so we
 can scope a phase 2 contract.

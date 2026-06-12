@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Hls, { type Level, type MediaPlaylist } from "hls.js";
 import { Settings, Check } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { DrmConfig, SubtitleAsset } from "../../api/types";
 
 /**
@@ -55,6 +56,7 @@ export default function VideoPlayer({
   drm,
   subtitles,
 }: Props) {
+  const { t } = useTranslation();
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
 
@@ -310,7 +312,7 @@ export default function VideoPlayer({
               onClick={skipRecap}
               className="rounded border border-white/40 bg-black/80 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white hover:text-black"
             >
-              Skip Recap
+              {t("player.skip_recap")}
             </button>
           )}
           {showSkipIntro && (
@@ -319,7 +321,7 @@ export default function VideoPlayer({
               onClick={skipIntro}
               className="rounded border border-white/40 bg-black/80 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white hover:text-black"
             >
-              Skip Intro
+              {t("player.skip_intro")}
             </button>
           )}
         </div>
@@ -330,7 +332,7 @@ export default function VideoPlayer({
           <button
             type="button"
             onClick={() => setSettingsOpen((v) => !v)}
-            aria-label="Playback settings"
+            aria-label={t("player.settings")}
             aria-expanded={settingsOpen}
             className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full bg-black/60 text-white backdrop-blur-sm transition hover:bg-black/85"
           >
@@ -379,18 +381,21 @@ function SettingsPanel({
   onPickSubtitle: (i: number) => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       className="absolute right-4 top-16 z-30 w-[260px] rounded bg-black/95 text-sm text-white shadow-2xl ring-1 ring-white/10 animate-scale-in"
       role="dialog"
-      aria-label="Playback settings"
+      aria-label={t("player.settings")}
     >
       {qualities.length > 0 && (
-        <Section title="Quality">
+        <Section title={t("player.quality")}>
           {qualities.map((q) => (
             <Row
               key={q.index}
-              label={q.label}
+              // The Auto entry is UI chrome (translated); real levels are
+              // "720p"-style labels straight from the manifest.
+              label={q.index === -1 ? t("player.auto") : q.label}
               selected={q.index === currentQuality}
               onClick={() => {
                 onPickQuality(q.index);
@@ -401,11 +406,11 @@ function SettingsPanel({
         </Section>
       )}
       {audioTracks.length > 1 && (
-        <Section title="Audio">
-          {audioTracks.map((t, i) => (
+        <Section title={t("player.audio")}>
+          {audioTracks.map((track, i) => (
             <Row
-              key={t.id ?? i}
-              label={trackLabel(t)}
+              key={track.id ?? i}
+              label={trackLabel(track)}
               selected={i === currentAudio}
               onClick={() => {
                 onPickAudio(i);
@@ -416,19 +421,19 @@ function SettingsPanel({
         </Section>
       )}
       {subtitleTracks.length > 0 && (
-        <Section title="Subtitles">
+        <Section title={t("player.subtitles")}>
           <Row
-            label="Off"
+            label={t("player.off")}
             selected={currentSubtitle === -1}
             onClick={() => {
               onPickSubtitle(-1);
               onClose();
             }}
           />
-          {subtitleTracks.map((t, i) => (
+          {subtitleTracks.map((track, i) => (
             <Row
-              key={t.id ?? i}
-              label={trackLabel(t)}
+              key={track.id ?? i}
+              label={trackLabel(track)}
               selected={i === currentSubtitle}
               onClick={() => {
                 onPickSubtitle(i);

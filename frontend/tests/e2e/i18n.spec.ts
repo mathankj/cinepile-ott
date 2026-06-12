@@ -19,8 +19,9 @@ test.describe("i18n", () => {
     // English baseline — the anonymous Sign In CTA is in English.
     await expect(page.locator('a[href="/login"]:has-text("Sign In")').first()).toBeVisible();
 
-    // Open the language picker and pick Hindi
-    await page.locator('button[aria-label="Language"]').click();
+    // Open the language picker and pick Hindi. The button's aria-label is
+    // itself localized, so tests target the stable data-testid instead.
+    await page.getByTestId("language-picker").click();
     await page.locator('button:has-text("हिन्दी")').click();
 
     // The Sign In CTA flips to its Hindi translation. Same href, new text.
@@ -38,14 +39,15 @@ test.describe("i18n", () => {
     await page.goto("/");
     await waitForHomeContent(page);
 
-    await page.locator('button[aria-label="Language"]').click();
+    await page.getByTestId("language-picker").click();
     await page.locator('button:has-text("தமிழ்")').click();
 
     // Navbar "Home" → "முகப்பு" in Tamil
     await expect(page.locator('nav a:has-text("முகப்பு")').first()).toBeVisible({ timeout: 5_000 });
 
-    // Reset to English for the next test to start clean.
-    await page.locator('button[aria-label="Language"]').click();
+    // Reset to English for the next test to start clean. (The aria-label is
+    // in Tamil at this point — another reason the testid selector matters.)
+    await page.getByTestId("language-picker").click();
     await page.locator('button:has-text("English")').click();
   });
 });

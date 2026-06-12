@@ -301,19 +301,23 @@ async def similar_titles(db: AsyncSession, title_id: int, *, limit: int = 20) ->
     if not seed_genre_ids:
         return []
 
-    # distinct() dedupes in SQL (a title matching 2 shared genres would
-    # otherwise occupy 2 of the LIMIT slots before Python-side .unique()).
+    # Dedupe via an IN-subquery on the join table rather than SELECT DISTINCT
+    # over the full row: titles.countries is a JSON column and Postgres has no
+    # equality operator for json, so DISTINCT on the whole row raises
+    # UndefinedFunctionError there (SQLite in tests happily allows it).
     stmt = (
         select(Title)
         .options(_SUMMARY_ONLY)
-        .join(titles_genres, titles_genres.c.title_id == Title.id)
         .where(
             _published_filter(),
-            titles_genres.c.genre_id.in_(seed_genre_ids),
             Title.id != title_id,
+            Title.id.in_(
+                select(titles_genres.c.title_id).where(
+                    titles_genres.c.genre_id.in_(seed_genre_ids)
+                )
+            ),
         )
         .order_by(Title.view_count.desc(), Title.id.desc())
-        .distinct()
         .limit(limit)
     )
     return list((await db.scalars(stmt)).unique().all())
