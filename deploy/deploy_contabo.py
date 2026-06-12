@@ -45,6 +45,14 @@ ENV_FILE = REPO_ROOT / "deploy" / ".env.production"
 PROTECTED_SERVICES = ["kotak.service", "kotak-trading-decision.service"]
 
 
+def _safe_print(text: str) -> None:
+    # The Windows console is cp1252; Docker build output carries box-drawing /
+    # emoji bytes it can't encode. Re-encode to the console's codec, dropping
+    # the un-encodable glyphs, so a noisy log never crashes the deploy.
+    enc = sys.stdout.encoding or "utf-8"
+    print(text.encode(enc, errors="replace").decode(enc))
+
+
 def run_remote(client: paramiko.SSHClient, cmd: str, *, check: bool = True, quiet: bool = False) -> str:
     if not quiet:
         print(f"  $ {cmd}")
@@ -52,9 +60,9 @@ def run_remote(client: paramiko.SSHClient, cmd: str, *, check: bool = True, quie
     exit_code = out.channel.recv_exit_status()
     stdout, stderr = out.read().decode(), err.read().decode()
     if stdout.strip() and not quiet:
-        print("    " + stdout.strip().replace("\n", "\n    "))
+        _safe_print("    " + stdout.strip().replace("\n", "\n    "))
     if check and exit_code != 0:
-        print(stderr, file=sys.stderr)
+        _safe_print(stderr)
         raise RuntimeError(f"remote command failed ({exit_code}): {cmd}")
     return stdout
 
