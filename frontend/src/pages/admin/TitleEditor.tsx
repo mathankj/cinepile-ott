@@ -6,6 +6,20 @@ import { admin } from "../../api";
 import { apiErrorMessage } from "../../api/client";
 
 /**
+ * Turn any human title into a backend-valid slug (^[a-z0-9-]+$): lowercase,
+ * spaces/punctuation → hyphens, collapse + trim repeats. "Happy Birthday: the
+ * last word!" → "happy-birthday-the-last-word". The slug field is auto-filled
+ * from the Title and also passed through this on every keystroke, so the old
+ * "String should match pattern" 422 can't happen anymore.
+ */
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/**
  * Admin title editor. /admin/titles/new for create, /admin/titles/:id for edit.
  * Right side: video upload (admin endpoint, multipart) with progress bar.
  */
@@ -50,6 +64,10 @@ export default function TitleEditor() {
     trailer_url: "",
     genre_slugs: [] as string[],
   });
+
+  // While creating, the slug auto-follows the Title until the admin hand-edits
+  // it. Once touched, we stop overwriting their choice.
+  const [slugTouched, setSlugTouched] = useState(false);
 
   // Hydrate form when detail loads
   if (detail.data && !form.title && form.slug === "") {
@@ -168,8 +186,19 @@ export default function TitleEditor() {
             disabled={!isNew}
             className="input-base"
             value={form.slug}
-            onChange={(e) => setForm({ ...form, slug: e.target.value })}
+            placeholder="auto-filled from title"
+            onChange={(e) => {
+              setSlugTouched(true);
+              // Sanitize live so the field can only ever hold a valid slug.
+              setForm({ ...form, slug: slugify(e.target.value) });
+            }}
           />
+          {isNew && (
+            <p className="text-xs text-white/40">
+              Lowercase letters, numbers and hyphens only — used in the URL. Leave it to
+              auto-fill from the title.
+            </p>
+          )}
           <label className="block text-xs uppercase tracking-wider text-white/60">Type</label>
           <select
             disabled={!isNew}
@@ -184,7 +213,15 @@ export default function TitleEditor() {
           <input
             className="input-base"
             value={form.title}
-            onChange={(e) => setForm({ ...form, title: e.target.value })}
+            onChange={(e) => {
+              const title = e.target.value;
+              // Auto-derive the slug while creating, unless the admin took it over.
+              setForm((f) => ({
+                ...f,
+                title,
+                slug: isNew && !slugTouched ? slugify(title) : f.slug,
+              }));
+            }}
           />
           <label className="block text-xs uppercase tracking-wider text-white/60">Synopsis</label>
           <textarea
@@ -303,7 +340,11 @@ export default function TitleEditor() {
           )}
           <div className="mt-4 flex flex-wrap gap-2">
             {isNew ? (
-              <button className="btn-primary" onClick={() => createM.mutate()} disabled={createM.isPending}>
+              <button
+                className="btn-primary"
+                onClick={() => createM.mutate()}
+                disabled={createM.isPending || !form.title.trim() || !form.slug}
+              >
                 {createM.isPending ? "Creating…" : "Create"}
               </button>
             ) : (
